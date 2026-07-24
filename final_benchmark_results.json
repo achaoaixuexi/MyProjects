@@ -1,0 +1,139 @@
+{
+  "test_date": "2026-07-24",
+  "total_cases": 65,
+  "categories": 12,
+  "old_entity_rate": 79.6,
+  "new_entity_rate": 88.8,
+  "old_bracket_rate": 89.2,
+  "new_bracket_rate": 95.4,
+  "old_sentence_rate": 84.6,
+  "new_sentence_rate": 83.1,
+  "old_fidelity_rate": 100.0,
+  "new_fidelity_rate": 100.0,
+  "old_rouge_avg": 0.81,
+  "new_rouge_avg": 0.832,
+  "old_fidelity_avg": 0.68,
+  "new_fidelity_avg": 0.713,
+  "old_length_avg": 152.9,
+  "new_length_avg": 168.7,
+  "old_time_us": 4.0,
+  "new_time_us": 105.6,
+  "old_failures": 0,
+  "new_failures": 0,
+  "old_avg_save_pct": 18.4,
+  "new_avg_save_pct": 14.8,
+  "old_total_saved_tokens": 3115,
+  "new_total_saved_tokens": 2860,
+  "old_total_orig_tokens": 5757,
+  "new_total_orig_tokens": 5757,
+  "per_category": {
+    "chinese": {
+      "cases": 5,
+      "old_save_pct": 11.0,
+      "new_save_pct": 11.0,
+      "old_rouge": 0.9,
+      "new_rouge": 0.9,
+      "old_fid": 0.4,
+      "new_fid": 0.4
+    },
+    "code": {
+      "cases": 6,
+      "old_save_pct": 22.3,
+      "new_save_pct": 5.6,
+      "old_rouge": 0.843,
+      "new_rouge": 0.942,
+      "old_fid": 0.739,
+      "new_fid": 0.888
+    },
+    "edge": {
+      "cases": 6,
+      "old_save_pct": 3.7,
+      "new_save_pct": 1.2,
+      "old_rouge": 0.818,
+      "new_rouge": 0.818,
+      "old_fid": 0.5,
+      "new_fid": 0.5
+    },
+    "entities": {
+      "cases": 5,
+      "old_save_pct": 0.0,
+      "new_save_pct": 0.0,
+      "old_rouge": 0.954,
+      "new_rouge": 0.954,
+      "old_fid": 0.95,
+      "new_fid": 0.95
+    },
+    "long_form": {
+      "cases": 5,
+      "old_save_pct": 82.3,
+      "new_save_pct": 76.7,
+      "old_rouge": 0.28,
+      "new_rouge": 0.353,
+      "old_fid": 0.5,
+      "new_fid": 0.5
+    },
+    "negation": {
+      "cases": 5,
+      "old_save_pct": 0.4,
+      "new_save_pct": 0.4,
+      "old_rouge": 0.97,
+      "new_rouge": 0.97,
+      "old_fid": 0.65,
+      "new_fid": 0.65
+    },
+    "paragraphs": {
+      "cases": 5,
+      "old_save_pct": 18.0,
+      "new_save_pct": 13.2,
+      "old_rouge": 0.88,
+      "new_rouge": 0.904,
+      "old_fid": 0.65,
+      "new_fid": 0.8
+    },
+    "paths": {
+      "cases": 5,
+      "old_save_pct": 0.0,
+      "new_save_pct": 0.0,
+      "old_rouge": 0.839,
+      "new_rouge": 0.839,
+      "old_fid": 1.0,
+      "new_fid": 1.0
+    },
+    "real_world": {
+      "cases": 5,
+      "old_save_pct": 27.9,
+      "new_save_pct": 29.4,
+      "old_rouge": 0.839,
+      "new_rouge": 0.831,
+      "old_fid": 0.747,
+      "new_fid": 0.772
+    },
+    "simple_en": {
+      "cases": 5,
+      "old_save_pct": 15.0,
+      "new_save_pct": 12.6,
+      "old_rouge": 0.831,
+      "new_rouge": 0.861,
+      "old_fid": 0.9,
+      "new_fid": 0.9
+    },
+    "stress": {
+      "cases": 5,
+      "old_save_pct": 36.9,
+      "new_save_pct": 35.5,
+      "old_rouge": 0.593,
+      "new_rouge": 0.604,
+      "old_fid": 0.458,
+      "new_fid": 0.461
+    },
+    "structured": {
+      "cases": 8,
+      "old_save_pct": 10.4,
+      "new_save_pct": 3.6,
+      "old_rouge": 0.907,
+      "new_rouge": 0.933,
+      "old_fid": 0.688,
+      "new_fid": 0.734
+    }
+  }
+}

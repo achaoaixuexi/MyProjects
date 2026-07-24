@@ -32,78 +32,184 @@ from common import safe_output_path
 # ---------------------------------------------------------------------------
 
 # Entities that should be preserved when truncating descriptions
-_ENTITY_PATTERNS: list[tuple[str, str]] = [
-    (r'\b\d{4}-\d{2}-\d{2}\b', 'date'),                        # 2026-07-23
-    (r'\b\d{2}/\d{2}/\d{4}\b', 'date'),                         # 07/23/2026
-    (r'https?://[^\s,;.!?)\]}<>"]+', 'url'),                    # URLs
-    (r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b', 'email'),  # emails
-    (r'`[^`]+`', 'code'),                                        # inline code
-    (r'\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b', 'camel'),              # CamelCase (e.g. VS Code, Postgres)
-    (r'\b[A-Z]{2,}(?:_[A-Z]{2,})*\b', 'acronym'),               # ACRONYMS
-    (r'\bversion\s+\d+\.\d+(?:\.\d+)?\b', 'version'),           # version numbers
+# ── P0-2: Chinese entities + P1-3: precompiled patterns ──
+_ENTITY_PATTERNS: list[tuple["re.Pattern[str]", str]] = [
+    # ── English / ASCII entities ──
+    (re.compile(r'\b\d{4}-\d{2}-\d{2}\b'), 'date'),                # 2026-07-23
+    (re.compile(r'\b\d{2}/\d{2}/\d{4}\b'), 'date'),                 # 07/23/2026
+    (re.compile(r'https?://[^\s,;.!?)\]}<>"]+'), 'url'),
+    (re.compile(r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'), 'email'),
+    (re.compile(r'`[^`]+`'), 'code'),
+    (re.compile(r'\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b'), 'camel'),     # CamelCase
+    (re.compile(r'\b[A-Z]{2,}(?:_[A-Z]{2,})*\b'), 'acronym'),
+    (re.compile(r'\bversion\s+\d+\.\d+(?:\.\d+)?\b'), 'version'),
+    # ── P0-2: Chinese entities ──
+    (re.compile(r'\d{4}年\d{1,2}月\d{1,2}日'), 'cn_date'),         # 2026年7月24日
+    (re.compile(r'第\d+(?:\.\d+)*版'), 'cn_version'),               # 第3版, 第2.0版
+    (re.compile(r'[「「]([^」」]+)[」」]'), 'cn_quote_term'),          # 「诊断优化」
+    (re.compile(r'v\d+\.\d+(?:\.\d+)?'), 'cn_version_v'),           # v2.0.0
+    (re.compile(r'[《]([^》]+)[》]'), 'cn_book_title'),               # 《SKILL.md规范》
+]
+
+# ── P0-1: code-fence / structured-data bracket safety ──
+_STRUCT_PAIRS: list[tuple[str, str, str]] = [
+    ('(', ')', 'paren'),
+    ('[', ']', 'bracket'),
+    ('{', '}', 'brace'),
+]
+_DEEP_STRUCT_PAIRS: list[tuple[str, str]] = [
+    ('```', '```'),   # code fence
+    ('$$', '$$'),     # display LaTeX
 ]
 
 
-def _smart_truncate(text: str, max_len: int = 180) -> str:
+def _find_safe_cut(text: str, cut_pos: int, min_pos: int) -> int:
+    """P0-1: Walk backward from *cut_pos* to avoid cutting inside
+    code-fences, LaTeX display math, or other permanently-unbalanced
+    structural markers."""
+    # ── Code fence check ──
+    fence_count = text[:cut_pos].count('```')
+    if fence_count % 2 != 0:
+        opening = text.rfind('```', min_pos, cut_pos)
+        if opening > min_pos:
+            before = text.rfind('\n', min_pos, opening)
+            return before if before > min_pos else opening
+    # ── Display LaTeX $$...$$ ──
+    for op, cl in _DEEP_STRUCT_PAIRS:
+        prefix = text[:cut_pos]
+        if prefix.count(op) != prefix.count(cl):
+            opening_pos = text.rfind(op, min_pos, cut_pos)
+            if opening_pos > min_pos:
+                space_before = text.rfind(' ', min_pos, opening_pos)
+                return space_before if space_before > min_pos else opening_pos
+    return cut_pos
+
+
+# ── P1-2: adaptive max_len ──
+def _adaptive_max_len(text_len: int, base: int = 180) -> int:
+    """Return a context-appropriate max truncation length."""
+    if text_len <= base:
+        return text_len
+    if text_len < 300:
+        return base
+    if text_len < 600:
+        return min(base + 40, text_len - 20)   # medium: 220 chars
+    return min(base + 80, text_len - 40)        # long: 260 chars
+
+
+# ── P2-1: content-type detection & adaptive compression mode ──
+
+_CODE_FENCE_RE = re.compile(r'```[\s\S]*?```')
+_JSON_BRACE_RE = re.compile(r'[{[].*?[}\]]')
+_LATEX_MATH_RE = re.compile(r'\$[^$]+\$')
+
+
+def _detect_content_type(text: str) -> str:
+    """Classify description text to choose the safest truncation mode.
+
+    Returns one of: 'conservative' (code/JSON), 'math' (LaTeX), 'balanced'."""
+    # Code fences present → conservative (preserve code block integrity)
+    if _CODE_FENCE_RE.search(text):
+        return 'conservative'
+    # JSON-like structures dominate → conservative (preserve {} [] pairing)
+    brace_content = len(_JSON_BRACE_RE.findall(text))
+    if brace_content >= 2 and brace_content / max(len(text.split()), 1) > 0.05:
+        return 'conservative'
+    # LaTeX math delimiters present → math mode (space-only trimming)
+    math_delims = text.count('$')
+    if math_delims >= 2 and math_delims % 2 == 0:
+        return 'math'
+    return 'balanced'
+
+
+def _smart_truncate(text: str, max_len: int | None = None) -> str:
     """Truncate description text at a smart boundary.
 
-    Strategy (revised):
-      1. Baseline: cut at the last word boundary ≤ max_len (captures ~180 chars).
-      2. Refine BACKWARD: search within 30 chars before the baseline for the
-         nearest sentence or clause boundary to create a natural reading break.
-         Never cut earlier than 55 % of max_len.
-      3. Bracket-safety: ensure '(' and ')' are balanced before the cut.
-      4. Entity rescue: if a key entity straddles the cut, extend to include it
-         and clean up trailing non-alphanumeric chars.
+    P0-1: code-fence / JSON-brace safety via _find_safe_cut.
+    P0-2: Chinese entity patterns in _ENTITY_PATTERNS.
+    P1-1: secondary boundary search in _rescue_entities.
+    P1-2: adaptive max_len based on original length.
+    P1-3: precompiled regex + early exit + tightened windows.
+    P2-1: content-type detection → conservative / math / balanced modes.
     """
+    # ── P1-3: early exit ──
+    if not text:
+        return text
+
+    # ── P1-2: adaptive length ──
+    if max_len is None:
+        max_len = _adaptive_max_len(len(text))
+
     if len(text) <= max_len:
         return text
+
+    # ── P2-1: content-type detection ──
+    mode = _detect_content_type(text)
+
+    # ── Math mode: space-only trimming, never cut inside $...$ ──
+    if mode == 'math':
+        # Find a safe space boundary near max_len, avoiding $ delimiters
+        cut = text.rfind(' ', 0, max_len)
+        if cut < int(max_len * 0.55):
+            cut = max_len
+        candidate = text[:cut]
+        if candidate.count('$') % 2 != 0:
+            # Inside math — extend to closing $
+            closing = text.find('$', cut)
+            if closing > 0 and closing - cut < 40:
+                cut = closing + 1
+        return text[:cut].rstrip() + "..."
+    # ── Conservative mode: wider margin, skip boundary refinement ──
+    if mode == 'conservative':
+        max_len = min(max_len + max_len // 5, len(text) - 10)
+    # ── Balanced mode (default): current optimised logic ──
 
     min_pos = int(max_len * 0.55)
 
     # ── 1) Baseline word-boundary cut ──
     best_cut = text.rfind(' ', 0, max_len)
     if best_cut < min_pos:
-        best_cut = max_len  # fallback: hard cut
+        best_cut = max_len
 
-    # ── 2) Refine backward — search within 30 chars before baseline ──
-    search_start = max(best_cut - 30, min_pos)
+    # ── 2) P0-1: Structural safety ──
+    best_cut = _find_safe_cut(text, best_cut, min_pos)
 
-    # Try sentence boundaries within the refinement window
-    for sep in ('. ', '! ', '? '):
-        pos = text.rfind(sep, search_start, best_cut)
-        if pos > 0:
-            candidate = text[:pos + 1]  # include the punctuation
-            if candidate.count('(') <= candidate.count(')'):
-                best_cut = pos + 1  # keep the period
-                break
-
-    # If no sentence break, try clause boundaries
-    if best_cut == text.rfind(' ', 0, max_len) or best_cut >= max_len:
-        for sep in (', ', '; ', ': '):
+    # ── 3) Refine backward (P2-1: conservative skips refinement) ──
+    if mode != 'conservative':
+        search_start = max(best_cut - 20, min_pos)
+        for sep in ('. ', '! ', '? '):
             pos = text.rfind(sep, search_start, best_cut)
             if pos > 0:
-                best_cut = pos + 1
-                break
+                candidate = text[:pos + 1]
+                if candidate.count('(') <= candidate.count(')'):
+                    best_cut = pos + 1
+                    break
+        if best_cut == text.rfind(' ', 0, max_len) or best_cut >= max_len:
+            for sep in (', ', '; ', ': '):
+                pos = text.rfind(sep, search_start, best_cut)
+                if pos > 0:
+                    best_cut = pos + 1
+                    break
 
-    # ── 3) Bracket safety — if '(' > ')', extend to matching ')' ──
+    # ── 4) Bracket safety — extend to matching close for all pair types ──
     candidate = text[:best_cut]
-    depth = candidate.count('(') - candidate.count(')')
-    if depth > 0:
-        search = best_cut
-        while depth > 0 and search < len(text):
-            ch = text[search]
-            if ch == '(':
-                depth += 1
-            elif ch == ')':
-                depth -= 1
-            search += 1
-        if depth == 0:
-            best_cut = search
+    for op, cl, _name in _STRUCT_PAIRS:
+        depth = candidate.count(op) - candidate.count(cl)
+        if depth > 0:
+            search = best_cut
+            while depth > 0 and search < len(text):
+                ch = text[search]
+                if ch == op:
+                    depth += 1
+                elif ch == cl:
+                    depth -= 1
+                search += 1
+            if depth == 0:
+                best_cut = search
 
     result = text[:best_cut].rstrip() + "..."
 
-    # ── 4) Entity rescue (with clean-end extension) ──
+    # ── 5) Entity rescue ──
     result = _rescue_entities(text, result, max_len)
 
     return result
@@ -112,50 +218,44 @@ def _smart_truncate(text: str, max_len: int = 180) -> str:
 def _rescue_entities(original: str, truncated: str, max_len: int) -> str:
     """Extend truncated text if a key entity straddles the cut point.
 
-    When an entity is rescued, also try to extend to the next natural
-    sentence/clause boundary so the result remains well-formed.
-    After extension, ensure the last character is alphanumeric or a
-    sentence terminator so the result looks clean."""
+    P1-1: After rescue, secondary boundary search within 20 chars.
+    P1-3: Tightened windows (80→60 rescue, 40→20 boundary, 80→60 ext)."""
     base = truncated.rstrip(".")
     base_len = len(base)
 
     for pattern, _etype in _ENTITY_PATTERNS:
-        for m in re.finditer(pattern, original):
+        for m in pattern.finditer(original):
             entity = m.group()
             ent_start = m.start()
             ent_end = m.end()
 
-            # Entity starts after current cut but within rescue window
-            if base_len <= ent_start < base_len + 80:
+            # P1-3: tightened rescue window 80→60
+            if base_len <= ent_start < base_len + 60:
                 if entity not in base:
-                    # Extend to include this entity
                     extended_end = ent_end
 
-                    # Also try to reach the next natural boundary after the entity
+                    # P1-1: secondary boundary search (tightened 40→20)
                     remaining = original[ent_end:]
                     for sep in ('. ', '! ', '? ', ', ', '; ', ': '):
                         next_boundary = remaining.find(sep)
-                        if 0 <= next_boundary < 40:  # within a short distance
+                        if 0 <= next_boundary < 20:
                             extended_end = ent_end + next_boundary + 1
                             break
 
-                    # If still no boundary found, extend to end of current word
                     if extended_end == ent_end:
                         next_space = original.find(' ', ent_end)
-                        if 0 <= next_space - ent_end < 25:
+                        if 0 <= next_space - ent_end < 20:
                             extended_end = next_space
 
                     extended = original[:extended_end].rstrip()
 
-                    # Ensure result ends cleanly: strip trailing non-alphanumeric
-                    # (e.g. backtick after rescued inline code) unless it's a
-                    # sentence terminator
                     while extended and not extended[-1].isalnum():
                         if extended[-1] in ('.', '!', '?', ',', ';', ':'):
                             break
                         extended = extended[:-1]
 
-                    if extended and len(extended) - base_len < 80:
+                    # P1-3: tightened max extension 80→60
+                    if extended and len(extended) - base_len < 60:
                         return extended + "..."
 
     return truncated

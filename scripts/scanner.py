@@ -156,15 +156,16 @@ def check_apply_to_wildcard(frontmatter: dict, filepath: str) -> Finding | None:
 
 
 def check_monolithic_skill(filepath: str) -> Finding | None:
-    """AP-02: SKILL.md > 500 lines — always flag regardless of references."""
+    """AP-02: SKILL.md > threshold lines — always flag regardless of references."""
     if not filepath.endswith("SKILL.md"):
         return None
     line_count = count_total_lines(filepath)
-    if line_count <= 500:
+    threshold = _thresholds.monolithic_skill_lines
+    if line_count <= threshold:
         return None
     return Finding(
         "AP-02", "critical", filepath,
-        detail=f"SKILL.md 共 {line_count} 行（超过 500 行阈值）",
+        detail=f"SKILL.md 共 {line_count} 行（超过 {threshold} 行阈值）",
         suggestion="将详细章节移入 references/ 子目录，SKILL.md 保留 <200 行的核心流程",
         est_savings="每次加载 2000-5000 token"
     )
@@ -234,12 +235,13 @@ def check_swiss_army_agent(frontmatter: dict, filepath: str) -> Finding | None:
 
 
 def check_bloated_always_on(filepath: str) -> Finding | None:
-    """AP-06: always-on instructions > 200 lines."""
+    """AP-06: always-on instructions > threshold lines."""
     line_count = count_total_lines(filepath)
-    if line_count > 200:
+    threshold = _thresholds.bloated_always_on_lines
+    if line_count > threshold:
         return Finding(
             "AP-06", "medium", filepath,
-            detail=f"always-on instructions 共 {line_count} 行（>200），每次对话都会加载",
+            detail=f"always-on instructions 共 {line_count} 行（>{threshold}），每次对话都会加载",
             suggestion="精简到 100 行以内，将场景规则拆分到 .github/instructions/*.instructions.md",
             est_savings="每次对话 500-2000 token"
         )
@@ -247,32 +249,34 @@ def check_bloated_always_on(filepath: str) -> Finding | None:
 
 
 def check_no_progressive_loading(filepath: str) -> Finding | None:
-    """AP-07: SKILL.md > 150 lines but no references/ dir."""
+    """AP-07: SKILL.md > threshold lines but no references/ dir."""
     if not filepath.endswith("SKILL.md"):
         return None
     line_count = count_total_lines(filepath)
-    if line_count <= 150:
+    threshold = _thresholds.no_progressive_lines
+    if line_count <= threshold:
         return None
     ref_dir = Path(filepath).parent / "references"
     if ref_dir.exists():
         return None
     return Finding(
         "AP-07", "medium", filepath,
-        detail=f"SKILL.md 共 {line_count} 行（>150），建议拆分以利用渐进加载",
+        detail=f"SKILL.md 共 {line_count} 行（>{threshold}），建议拆分以利用渐进加载",
         suggestion="将非核心章节移入 references/ 子目录",
         est_savings="每次加载 500-1500 token"
     )
 
 
 def check_large_skill(filepath: str) -> Finding | None:
-    """AP-08: SKILL.md >= 200 lines (no upper cap — >500 also flagged by AP-02)."""
+    """AP-08: SKILL.md >= threshold lines."""
     if not filepath.endswith("SKILL.md"):
         return None
     line_count = count_total_lines(filepath)
-    if line_count >= 200:
+    threshold = _thresholds.large_skill_lines
+    if line_count >= threshold:
         return Finding(
             "AP-08", "medium", filepath,
-            detail=f"SKILL.md 共 {line_count} 行（>=200），在推荐范围内但仍有优化空间",
+            detail=f"SKILL.md 共 {line_count} 行（>={threshold}），在推荐范围内但仍有优化空间",
             suggestion="审查内容，将非核心流程移入 references/",
             est_savings="每次加载 200-1000 token"
         )
@@ -295,14 +299,95 @@ def check_missing_tools(frontmatter: dict, filepath: str) -> Finding | None:
 
 
 def check_long_description(frontmatter: dict, filepath: str) -> Finding | None:
-    """AP-12: description > 500 chars."""
+    """AP-12: description > threshold chars."""
     desc = frontmatter.get("description", "")
-    if isinstance(desc, str) and len(desc) > 500:
+    threshold = _thresholds.long_description_chars
+    if isinstance(desc, str) and len(desc) > threshold:
         return Finding(
             "AP-12", "low", filepath,
-            detail=f"description 共 {len(desc)} 字符（>500），增加发现阶段 token 消耗",
+            detail=f"description 共 {len(desc)} 字符（>{threshold}），增加发现阶段 token 消耗",
             suggestion="精简到 200 字符以内，聚焦关键词",
             est_savings="每次发现阶段 20-50 token"
+        )
+    return None
+
+
+def check_inline_code_blocks(filepath: str) -> Finding | None:
+    """AP-13: Inline code blocks > 50 lines without external file reference."""
+    if not (filepath.endswith(".md") or filepath.endswith(".instructions.md")):
+        return None
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="ignore") as fh:
+            content = fh.read()
+    except (FileNotFoundError, PermissionError):
+        return None
+
+    code_blocks = re.findall(r'```[\s\S]*?```', content)
+    huge_blocks = [b for b in code_blocks if b.count('\n') > 50]
+    if huge_blocks:
+        return Finding(
+            "AP-13", "high", filepath,
+            detail=f"发现 {len(huge_blocks)} 个超大代码块（>50行），建议移至外部文件引用",
+            suggestion="将大型代码示例保存为独立文件，在 SKILL.md 中用相对路径引用",
+            est_savings="每次加载 1000-5000 token"
+        )
+    return None
+
+
+def check_redundant_imports(filepath: str) -> Finding | None:
+    """AP-14: Redundant import/installation instructions in multiple places."""
+    if not (filepath.endswith(".md") or filepath.endswith(".instructions.md")):
+        return None
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="ignore") as fh:
+            content = fh.read()
+    except (FileNotFoundError, PermissionError):
+        return None
+
+    install_patterns = [r'pip install', r'npm install', r'go get', r'cargo install',
+                        r'gem install', r'conda install', r'brew install',
+                        r'import ', r'from .+ import', r'require\(']
+    count = 0
+    for pat in install_patterns:
+        count += len(re.findall(pat, content, re.IGNORECASE))
+    if count >= 5:
+        return Finding(
+            "AP-14", "medium", filepath,
+            detail=f"发现 {count} 处 import/install 指令，可能存在冗余依赖说明",
+            suggestion="将安装说明集中到一处（如 README.md 或单独的 SETUP.md），instruction 中用引用链接替代",
+            est_savings="每次加载 200-1000 token"
+        )
+    return None
+
+
+def check_excessive_comment_ratio(filepath: str) -> Finding | None:
+    """AP-15: Comment lines ratio > 40% in instruction/skill files."""
+    if not (filepath.endswith(".md") or filepath.endswith(".instructions.md")):
+        return None
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="ignore") as fh:
+            lines = fh.readlines()
+    except (FileNotFoundError, PermissionError):
+        return None
+
+    if len(lines) < 20:
+        return None
+    comment_lines = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith('#') or stripped.startswith('//') or stripped.startswith('<!--'):
+            comment_lines += 1
+        elif stripped.startswith('>') and len(stripped) > 1:
+            comment_lines += 1
+    total_content = sum(1 for l in lines if l.strip())
+    if total_content > 0 and comment_lines / total_content > 0.4:
+        return Finding(
+            "AP-15", "low", filepath,
+            detail=f"注释行占比 {comment_lines/total_content*100:.0f}%（>40%），可能存在冗余解释",
+            suggestion="将详细的解释性注释精简为关键说明，非必要的背景信息移至 references/",
+            est_savings="每次加载 100-500 token"
         )
     return None
 
@@ -423,18 +508,145 @@ def check_workbuddy_extra_frontmatter(frontmatter: dict, filepath: str) -> Findi
 
 
 # ---------------------------------------------------------------------------
-# Main scan logic
+# P3: Learning-based adaptive thresholds
 # ---------------------------------------------------------------------------
+
+class Thresholds:
+    """Adjustable detection thresholds.  Defaults are the standard values.
+
+    When *tighten()* is called with project baselines, thresholds are
+    lowered (never raised) to better match the actual project norms,
+    reducing false positives while keeping all true detections."""
+
+    def __init__(self):
+        self.monolithic_skill_lines = 500       # AP-02
+        self.bloated_always_on_lines = 200      # AP-06
+        self.no_progressive_lines = 150         # AP-07
+        self.large_skill_lines = 200            # AP-08
+        self.long_description_chars = 500       # AP-12
+        self.skill_median_lines: float = 0.0
+        self.desc_median_chars: float = 0.0
+        self.learned = False
+
+    def tighten(self, skill_median: float, desc_median: float,
+                always_on_median: float) -> dict:
+        """Tighten thresholds based on project-specific baselines.
+
+        Only lowers thresholds — never raises above defaults.
+        Returns a dict of changed values for reporting."""
+        changes: dict[str, tuple[int, int]] = {}
+
+        if skill_median > 0:
+            # AP-02: monolithic = median * 3, capped at default
+            new_ap02 = max(100, min(int(skill_median * 3), self.monolithic_skill_lines))
+            if new_ap02 < self.monolithic_skill_lines:
+                changes['AP-02'] = (self.monolithic_skill_lines, new_ap02)
+                self.monolithic_skill_lines = new_ap02
+            # AP-07: progressive = median * 1.5, capped at default
+            new_ap07 = max(50, min(int(skill_median * 1.5), self.no_progressive_lines))
+            if new_ap07 < self.no_progressive_lines:
+                changes['AP-07'] = (self.no_progressive_lines, new_ap07)
+                self.no_progressive_lines = new_ap07
+            # AP-08: large = median * 2, capped at default
+            new_ap08 = max(80, min(int(skill_median * 2), self.large_skill_lines))
+            if new_ap08 < self.large_skill_lines:
+                changes['AP-08'] = (self.large_skill_lines, new_ap08)
+                self.large_skill_lines = new_ap08
+
+        if always_on_median > 0:
+            # AP-06: bloated always-on = median * 2, capped at default
+            new_ap06 = max(60, min(int(always_on_median * 2), self.bloated_always_on_lines))
+            if new_ap06 < self.bloated_always_on_lines:
+                changes['AP-06'] = (self.bloated_always_on_lines, new_ap06)
+                self.bloated_always_on_lines = new_ap06
+
+        if desc_median > 0:
+            # AP-12: long desc = median * 3, capped at default
+            new_ap12 = max(100, min(int(desc_median * 3), self.long_description_chars))
+            if new_ap12 < self.long_description_chars:
+                changes['AP-12'] = (self.long_description_chars, new_ap12)
+                self.long_description_chars = new_ap12
+
+        if changes:
+            self.learned = True
+            self.skill_median_lines = skill_median
+            self.desc_median_chars = desc_median
+        return changes
+
+
+def _compute_project_baselines(found: dict) -> dict:
+    """Compute median file-line and description-length statistics from
+    discovered files.  Used by adaptive-threshold tightening."""
+    skill_lines = []
+    always_on_lines = []
+    desc_lengths = []
+
+    for fpath in found.get("skills", []):
+        lc = count_total_lines(fpath)
+        if lc > 0:
+            skill_lines.append(lc)
+        fm = parse_frontmatter(fpath)
+        desc = fm.get("description", "")
+        if isinstance(desc, str) and desc:
+            desc_lengths.append(len(desc))
+
+    for fpath in found.get("always_on", []):
+        lc = count_total_lines(fpath)
+        if lc > 0:
+            always_on_lines.append(lc)
+
+    for fpath in found.get("instructions", []) + found.get("agents", []):
+        fm = parse_frontmatter(fpath)
+        desc = fm.get("description", "")
+        if isinstance(desc, str) and desc:
+            desc_lengths.append(len(desc))
+
+    def _median(vals: list[int]) -> float:
+        if not vals:
+            return 0.0
+        s = sorted(vals)
+        n = len(s)
+        if n % 2 == 0:
+            return (s[n // 2 - 1] + s[n // 2]) / 2.0
+        return float(s[n // 2])
+
+    return {
+        "skill_median": _median(skill_lines),
+        "always_on_median": _median(always_on_lines),
+        "desc_median": _median(desc_lengths),
+    }
+
+
+# ── Instantiate module-level thresholds ──
+_thresholds = Thresholds()
 
 def scan(target_dir: str, platform: str = "copilot",
          max_depth: int = 5, max_files: int = 1000,
-         use_cache: bool = True) -> dict:
+         use_cache: bool = True, learn: bool = False) -> dict:
     """Run all checks and return structured results."""
     root = Path(target_dir).resolve()
     if not root.is_dir():
         return {"error": f"目录不存在: {target_dir}", "findings": [], "summary": {}}
 
     found = discover_files(root, platform, max_depth=max_depth, max_files=max_files)
+
+    # ── P3: Learning-based threshold tightening ──
+    threshold_info: dict | None = None
+    if learn:
+        baselines = _compute_project_baselines(found)
+        changes = _thresholds.tighten(
+            baselines["skill_median"],
+            baselines["desc_median"],
+            baselines["always_on_median"],
+        )
+        threshold_info = {
+            "baselines": {k: round(v, 1) for k, v in baselines.items()},
+            "adjusted_thresholds": {k: f"{old}→{new}" for k, (old, new) in changes.items()},
+            "thresholds_applied": _thresholds.learned,
+        }
+    else:
+        # Reset to defaults to avoid stale state from previous --learn runs
+        _thresholds.__init__()
 
     findings: list[dict] = []
 
@@ -479,6 +691,24 @@ def scan(target_dir: str, platform: str = "copilot",
 
     # AP-11: Circular agent handoff
     findings.extend(f.to_dict() for f in check_circular_handoff(found))
+
+    # AP-13: Inline huge code blocks
+    for f in found["skills"] + found["instructions"]:
+        result = check_inline_code_blocks(f)
+        if result:
+            findings.append(result.to_dict())
+
+    # AP-14: Redundant import/install instructions
+    for f in found["skills"] + found["instructions"] + found["always_on"]:
+        result = check_redundant_imports(f)
+        if result:
+            findings.append(result.to_dict())
+
+    # AP-15: Excessive comment ratio
+    for f in found["skills"] + found["instructions"]:
+        result = check_excessive_comment_ratio(f)
+        if result:
+            findings.append(result.to_dict())
 
     # --- Frontmatter-based checks ---
     all_md_files = found["skills"] + found["instructions"] + found["agents"] + found["prompts"] + found["always_on"]
@@ -546,6 +776,7 @@ def scan(target_dir: str, platform: str = "copilot",
         "scan_time": datetime.now().isoformat(),
         "findings": findings,
         "summary": summary,
+        "threshold_info": threshold_info,
     }
 
 
@@ -566,6 +797,8 @@ def main():
                         help="启用文件级缓存以加速重复扫描（默认启用）")
     parser.add_argument("--no-cache", action="store_false", dest="cache",
                         help="禁用缓存，强制全量扫描")
+    parser.add_argument("--learn", action="store_true", default=False,
+                        help="启用学习型阈值：基于项目文件统计自动收紧检测阈值，减少误报")
     args = parser.parse_args()
 
     # Validate output path
@@ -578,7 +811,7 @@ def main():
 
     result = scan(args.target, platform=args.platform,
                   max_depth=args.max_depth, max_files=args.max_files,
-                  use_cache=args.cache)
+                  use_cache=args.cache, learn=args.learn)
     indent = 2 if args.pretty else None
 
     if args.output:
