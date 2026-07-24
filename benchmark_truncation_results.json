@@ -1,6 +1,6 @@
 {
   "test_date": "2026-07-24",
-  "num_test_cases": 10,
+  "num_test_cases": 15,
   "cases": [
     {
       "id": "date_near_boundary",
@@ -23,7 +23,11 @@
       "old_bracket_safe": true,
       "new_bracket_safe": true,
       "old_fidelity_pass": true,
-      "new_fidelity_pass": true
+      "new_fidelity_pass": true,
+      "old_fidelity_score": 1.0,
+      "new_fidelity_score": 1.0,
+      "old_rouge_l": 0.8333333333333333,
+      "new_rouge_l": 0.8333333333333333
     },
     {
       "id": "date_deep_in_text",
@@ -54,7 +58,11 @@
       "old_bracket_safe": true,
       "new_bracket_safe": true,
       "old_fidelity_pass": true,
-      "new_fidelity_pass": true
+      "new_fidelity_pass": true,
+      "old_fidelity_score": 0.733,
+      "new_fidelity_score": 0.867,
+      "old_rouge_l": 0.641025641025641,
+      "new_rouge_l": 0.7228915662650602
     },
     {
       "id": "url_near_boundary",
@@ -84,7 +92,11 @@
       "old_bracket_safe": true,
       "new_bracket_safe": true,
       "old_fidelity_pass": true,
-      "new_fidelity_pass": true
+      "new_fidelity_pass": true,
+      "old_fidelity_score": 0.867,
+      "new_fidelity_score": 1.0,
+      "old_rouge_l": 0.8275862068965517,
+      "new_rouge_l": 0.8135593220338982
     },
     {
       "id": "code_terms_near_boundary",
@@ -133,7 +145,11 @@
       "old_bracket_safe": true,
       "new_bracket_safe": true,
       "old_fidelity_pass": true,
-      "new_fidelity_pass": true
+      "new_fidelity_pass": true,
+      "old_fidelity_score": 0.778,
+      "new_fidelity_score": 0.778,
+      "old_rouge_l": 0.6857142857142856,
+      "new_rouge_l": 0.7123287671232876
     },
     {
       "id": "camelcase_acronyms",
@@ -179,7 +195,11 @@
       "old_bracket_safe": true,
       "new_bracket_safe": true,
       "old_fidelity_pass": true,
-      "new_fidelity_pass": true
+      "new_fidelity_pass": true,
+      "old_fidelity_score": 0.9,
+      "new_fidelity_score": 0.9,
+      "old_rouge_l": 0.7887323943661972,
+      "new_rouge_l": 0.7714285714285715
     },
     {
       "id": "bracket_safety",
@@ -213,7 +233,11 @@
       "old_bracket_safe": true,
       "new_bracket_safe": true,
       "old_fidelity_pass": true,
-      "new_fidelity_pass": true
+      "new_fidelity_pass": true,
+      "old_fidelity_score": 0.9,
+      "new_fidelity_score": 0.9,
+      "old_rouge_l": 0.5121951219512195,
+      "new_rouge_l": 0.49382716049382713
     },
     {
       "id": "chinese_trigger_words",
@@ -247,7 +271,11 @@
       "old_bracket_safe": true,
       "new_bracket_safe": true,
       "old_fidelity_pass": true,
-      "new_fidelity_pass": true
+      "new_fidelity_pass": true,
+      "old_fidelity_score": 0.9,
+      "new_fidelity_score": 0.9,
+      "old_rouge_l": 0.8260869565217391,
+      "new_rouge_l": 0.9019607843137256
     },
     {
       "id": "version_numbers",
@@ -278,7 +306,11 @@
       "old_bracket_safe": true,
       "new_bracket_safe": true,
       "old_fidelity_pass": true,
-      "new_fidelity_pass": true
+      "new_fidelity_pass": true,
+      "old_fidelity_score": 0.867,
+      "new_fidelity_score": 0.867,
+      "old_rouge_l": 0.6301369863013699,
+      "new_rouge_l": 0.6301369863013699
     },
     {
       "id": "short_desc",
@@ -295,7 +327,11 @@
       "old_bracket_safe": true,
       "new_bracket_safe": true,
       "old_fidelity_pass": true,
-      "new_fidelity_pass": true
+      "new_fidelity_pass": true,
+      "old_fidelity_score": 1.0,
+      "new_fidelity_score": 1.0,
+      "old_rouge_l": 0.875,
+      "new_rouge_l": 0.875
     },
     {
       "id": "entities_all_past_boundary",
@@ -324,23 +360,206 @@
       "old_bracket_safe": true,
       "new_bracket_safe": true,
       "old_fidelity_pass": true,
-      "new_fidelity_pass": true
+      "new_fidelity_pass": true,
+      "old_fidelity_score": 0.6,
+      "new_fidelity_score": 0.6,
+      "old_rouge_l": 0.6027397260273972,
+      "new_rouge_l": 0.6027397260273972
+    },
+    {
+      "id": "json_structure",
+      "desc_len": 297,
+      "old_len": 174,
+      "new_len": 160,
+      "orig_entities": [
+        "2026-07-24",
+        "API",
+        "JSON",
+        "https://api"
+      ],
+      "old_preserved": [
+        "2026-07-24",
+        "API",
+        "JSON",
+        "https://api"
+      ],
+      "new_preserved": [
+        "2026-07-24",
+        "API",
+        "JSON",
+        "https://api"
+      ],
+      "old_lost": [],
+      "new_lost": [],
+      "old_sentence_boundary": true,
+      "new_sentence_boundary": true,
+      "old_bracket_safe": false,
+      "new_bracket_safe": false,
+      "old_fidelity_pass": false,
+      "new_fidelity_pass": false,
+      "old_fidelity_score": 0.778,
+      "new_fidelity_score": 0.778,
+      "old_rouge_l": 0.6799999999999999,
+      "new_rouge_l": 0.653061224489796
+    },
+    {
+      "id": "csv_table",
+      "desc_len": 268,
+      "old_len": 54,
+      "new_len": 180,
+      "orig_entities": [
+        "2026-07-15",
+        "2026-07-20",
+        "2026-07-22",
+        "CSV"
+      ],
+      "old_preserved": [
+        "CSV"
+      ],
+      "new_preserved": [
+        "2026-07-15",
+        "2026-07-20",
+        "CSV"
+      ],
+      "old_lost": [
+        "2026-07-15",
+        "2026-07-20",
+        "2026-07-22"
+      ],
+      "new_lost": [
+        "2026-07-22"
+      ],
+      "old_sentence_boundary": true,
+      "new_sentence_boundary": false,
+      "old_bracket_safe": true,
+      "new_bracket_safe": true,
+      "old_fidelity_pass": true,
+      "new_fidelity_pass": true,
+      "old_fidelity_score": 0.7,
+      "new_fidelity_score": 0.7,
+      "old_rouge_l": 0.5333333333333333,
+      "new_rouge_l": 0.6470588235294118
+    },
+    {
+      "id": "latex_inline",
+      "desc_len": 252,
+      "old_len": 168,
+      "new_len": 168,
+      "orig_entities": [],
+      "old_preserved": [],
+      "new_preserved": [],
+      "old_lost": [],
+      "new_lost": [],
+      "old_sentence_boundary": true,
+      "new_sentence_boundary": true,
+      "old_bracket_safe": true,
+      "new_bracket_safe": true,
+      "old_fidelity_pass": true,
+      "new_fidelity_pass": true,
+      "old_fidelity_score": 1.0,
+      "new_fidelity_score": 1.0,
+      "old_rouge_l": 0.8524590163934427,
+      "new_rouge_l": 0.8524590163934427
+    },
+    {
+      "id": "mixed_code_json",
+      "desc_len": 320,
+      "old_len": 173,
+      "new_len": 223,
+      "orig_entities": [
+        "2026-07-15",
+        "API",
+        "JSON",
+        "`FastAPI`",
+        "`SQLAlchemy`",
+        "`uvicorn main:app --reload --port 8080`",
+        "`{\"pool_size\": 20, \"max_overflow\": 10}`",
+        "https://docs"
+      ],
+      "old_preserved": [
+        "JSON",
+        "`FastAPI`",
+        "`SQLAlchemy`",
+        "`{\"pool_size\": 20, \"max_overflow\": 10}`"
+      ],
+      "new_preserved": [
+        "JSON",
+        "`FastAPI`",
+        "`SQLAlchemy`",
+        "`uvicorn main:app --reload --port 8080`",
+        "`{\"pool_size\": 20, \"max_overflow\": 10}`",
+        "https://docs"
+      ],
+      "old_lost": [
+        "2026-07-15",
+        "API",
+        "`uvicorn main:app --reload --port 8080`",
+        "https://docs"
+      ],
+      "new_lost": [
+        "2026-07-15",
+        "API"
+      ],
+      "old_sentence_boundary": true,
+      "new_sentence_boundary": true,
+      "old_bracket_safe": true,
+      "new_bracket_safe": true,
+      "old_fidelity_pass": true,
+      "new_fidelity_pass": true,
+      "old_fidelity_score": 0.8,
+      "new_fidelity_score": 0.9,
+      "old_rouge_l": 0.7096774193548387,
+      "new_rouge_l": 0.7575757575757575
+    },
+    {
+      "id": "deeply_nested_brackets",
+      "desc_len": 329,
+      "old_len": 170,
+      "new_len": 170,
+      "orig_entities": [
+        "AP",
+        "WB"
+      ],
+      "old_preserved": [
+        "AP",
+        "WB"
+      ],
+      "new_preserved": [
+        "AP",
+        "WB"
+      ],
+      "old_lost": [],
+      "new_lost": [],
+      "old_sentence_boundary": true,
+      "new_sentence_boundary": true,
+      "old_bracket_safe": true,
+      "new_bracket_safe": true,
+      "old_fidelity_pass": true,
+      "new_fidelity_pass": true,
+      "old_fidelity_score": 1.0,
+      "new_fidelity_score": 1.0,
+      "old_rouge_l": 0.7297297297297298,
+      "new_rouge_l": 0.7297297297297298
     }
   ],
   "summary_old": {
-    "entity_preservation_rate": 57.9,
+    "entity_preservation_rate": 58.9,
     "sentence_boundary_rate": 100.0,
-    "bracket_safety_rate": 100.0,
-    "fidelity_pass_rate": 100.0,
-    "avg_truncated_length": 161.9,
-    "avg_length_vs_target": 89.9
+    "bracket_safety_rate": 93.3,
+    "fidelity_pass_rate": 93.3,
+    "avg_fidelity_score": 0.855,
+    "avg_rouge_l": 0.715,
+    "avg_truncated_length": 157.2,
+    "avg_length_vs_target": 87.3
   },
   "summary_new": {
-    "entity_preservation_rate": 63.2,
-    "sentence_boundary_rate": 100.0,
-    "bracket_safety_rate": 100.0,
-    "fidelity_pass_rate": 100.0,
-    "avg_truncated_length": 172.4,
-    "avg_length_vs_target": 95.8
+    "entity_preservation_rate": 69.6,
+    "sentence_boundary_rate": 93.3,
+    "bracket_safety_rate": 93.3,
+    "fidelity_pass_rate": 93.3,
+    "avg_fidelity_score": 0.879,
+    "avg_rouge_l": 0.733,
+    "avg_truncated_length": 175.0,
+    "avg_length_vs_target": 97.2
   }
 }

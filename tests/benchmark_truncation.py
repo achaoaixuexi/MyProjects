@@ -31,6 +31,10 @@ from fixer import (
     _ENTITY_PATTERNS,
 )
 
+# ── ROUGE-L for quality assessment (pure-Python, zero-dependency) ──
+sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+from benchmark_reporter import rouge_l_similarity
+
 
 # ── Old truncation (the code before improvement) ──
 def _old_truncate(text: str, max_len: int = 180) -> str:
@@ -38,6 +42,89 @@ def _old_truncate(text: str, max_len: int = 180) -> str:
     if len(text) <= max_len:
         return text
     return text[:max_len].rsplit(" ", 1)[0] + "..."
+
+
+# ─── Semantic Fidelity  (Layer 2 quality assessment) ───
+
+class SemanticFidelity:
+    """Composite truncation quality score (0–100).
+
+    Aggregates four sub-scores:
+      - entity_retention:   fraction of key entities preserved
+      - keyword_retention:  fraction of trigger-words preserved
+      - structural_safety:  bracket / quote pairing completeness
+      - readability:        sentence / clause boundary naturalness
+    """
+
+    TRIGGER_WORDS = [
+        "use when", "使用", "diagnose", "诊断", "optimize", "优化",
+        "search", "搜索", "generate", "生成", "analyze", "分析",
+    ]
+
+    def __init__(self, original: str, truncated: str):
+        self.original = original
+        self.truncated = truncated.rstrip(".")
+        self.entity_retention = self._calc_entity_retention()
+        self.keyword_retention = self._calc_keyword_retention()
+        self.structural_safety = self._calc_structural_safety()
+        self.readability = self._calc_readability()
+
+    def _calc_entity_retention(self) -> float:
+        orig = get_entities_in_text(self.original)
+        trunc = get_entities_in_text(self.truncated)
+        if not orig:
+            return 1.0
+        return len(orig & trunc) / len(orig)
+
+    def _calc_keyword_retention(self) -> float:
+        orig_lower = self.original.lower()
+        trunc_lower = self.truncated.lower()
+        orig_kw = [t for t in self.TRIGGER_WORDS if t in orig_lower]
+        if not orig_kw:
+            return 1.0
+        preserved = sum(1 for t in orig_kw if t in trunc_lower)
+        return preserved / len(orig_kw)
+
+    def _calc_structural_safety(self) -> float:
+        pairs = [('(', ')'), ('[', ']'), ('{', '}'), ('$', '$')]
+        ok = 0
+        for op, cl in pairs:
+            if self.truncated.count(op) == self.truncated.count(cl):
+                ok += 1
+        # markdown code-fence
+        if self.truncated.count('```') % 2 == 0:
+            ok += 0.5
+        else:
+            ok -= 0.5
+        return max(0.0, min(1.0, (ok + 0.5) / (len(pairs) + 0.5)))
+
+    def _calc_readability(self) -> float:
+        txt = self.truncated.rstrip()
+        if not txt:
+            return 1.0
+        if any(txt.endswith(c) for c in ('.', '!', '?', ',', ';', ':')):
+            return 1.0
+        if txt[-1].isalnum():
+            return 1.0
+        return 0.0
+
+    def composite_score(self) -> float:
+        return round(
+            self.entity_retention  * 0.4 +
+            self.keyword_retention * 0.2 +
+            self.structural_safety * 0.2 +
+            self.readability       * 0.2,
+            3,
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "composite_score": self.composite_score(),
+            "entity_retention": round(self.entity_retention, 3),
+            "keyword_retention": round(self.keyword_retention, 3),
+            "structural_safety": round(self.structural_safety, 3),
+            "readability": round(self.readability, 3),
+        }
 
 
 # ── Test case definitions ──
@@ -160,6 +247,66 @@ TEST_CASES: list[dict] = [
         ),
         "expected_entities": ["PostgreSQL", "https://example.com/api/v42"],
     },
+
+    # ──── Issue 6-1: Special-format edge cases ────
+
+    {
+        "id": "json_structure",
+        "desc": (
+            "Configure the API gateway with the following JSON settings: "
+            '{"api_endpoint": "https://api.example.com/v2", "version": "2026-07-24", '
+            '"retry": {"max_attempts": 3, "backoff_ms": 500}, '
+            '"features": ["search", "recommend", "chat"]}. '
+            "The JSON blob must be valid after any processing including truncation."
+        ),
+        "expected_entities": ["https://api.example.com/v2", "2026-07-24"],
+    },
+    {
+        "id": "csv_table",
+        "desc": (
+            "The following CSV data represents monthly token usage: "
+            "name,date,tokens_input,tokens_output,total\n"
+            "Alice,2026-07-15,15000,3200,18200\n"
+            "Bob,2026-07-20,23000,4100,27100\n"
+            "Charlie,2026-07-22,8900,2100,11000. "
+            "Note that CSV column alignment and delimiter integrity are critical."
+        ),
+        "expected_entities": ["2026-07-15", "2026-07-20", "2026-07-22"],
+    },
+    {
+        "id": "latex_inline",
+        "desc": (
+            "For mathematical notation we use LaTeX: $E = mc^2$ is Einstein's equation "
+            "and $\\sum_{i=1}^{n} x_i$ represents summation. "
+            "The inline formula $F = ma$ and display formula $$\\int_0^\\infty e^{-x^2} dx$$ "
+            "must preserve dollar-sign pairing through truncation."
+        ),
+        "expected_entities": [],
+    },
+    {
+        "id": "mixed_code_json",
+        "desc": (
+            "Use when writing database migrations with `SQLAlchemy` and `FastAPI`. "
+            'Configure via JSON: `{"pool_size": 20, "max_overflow": 10}`. '
+            "Run with `uvicorn main:app --reload --port 8080`. "
+            "Refer to https://docs.sqlalchemy.org/en/20/ for the latest API changes "
+            "released on 2026-07-15. See also PostgreSQL and Redis configuration."
+        ),
+        "expected_entities": ["SQLAlchemy", "FastAPI",
+                              "https://docs.sqlalchemy.org/en/20/",
+                              "2026-07-15", "PostgreSQL", "Redis"],
+    },
+    {
+        "id": "deeply_nested_brackets",
+        "desc": (
+            "The anti-pattern hierarchy is: ((AP-01 and (AP-02 or AP-03)) and "
+            "(AP-04 or (AP-05 and AP-06))) and ((WB-01) or (WB-02 and WB-03)). "
+            "Each anti-pattern has a severity rating [critical, high, medium, low] "
+            "and a category (context loading, progressive loading, agent design). "
+            "Refer to references/anti-patterns.md for the complete list."
+        ),
+        "expected_entities": ["WB"],
+    },
 ]
 
 
@@ -198,12 +345,21 @@ def check_sentence_boundary(text: str) -> bool:
 
 
 def check_bracket_safety(original: str, truncated: str) -> bool:
-    """Check that truncation didn't cut inside brackets."""
+    """Check that truncation didn't cut inside brackets — extended for
+    LaTeX $...$ / JSON {} [] / markdown code-fence ```."""
     base = truncated.rstrip(".")
-    # Count brackets in truncated portion vs what would be inside
-    open_count = base.count('(') + base.count('[') + base.count('{')
-    close_count = base.count(')') + base.count(']') + base.count('}')
-    return open_count == close_count
+    pairs = [
+        ('(', ')'), ('[', ']'), ('{', '}'),     # standard
+        ('$', '$'),                              # LaTeX math
+    ]
+    for op, cl in pairs:
+        if base.count(op) != base.count(cl):
+            return False
+    # Markdown code-fence triples
+    fence_count = base.count('```')
+    if fence_count % 2 != 0:
+        return False
+    return True
 
 
 def run_benchmark() -> dict:
@@ -217,6 +373,8 @@ def run_benchmark() -> dict:
             "sentence_boundary_rate": 0.0,
             "bracket_safety_rate": 0.0,
             "fidelity_pass_rate": 0.0,
+            "avg_fidelity_score": 0.0,
+            "avg_rouge_l": 0.0,
             "avg_truncated_length": 0.0,
             "avg_length_vs_target": 0.0,
         },
@@ -225,6 +383,8 @@ def run_benchmark() -> dict:
             "sentence_boundary_rate": 0.0,
             "bracket_safety_rate": 0.0,
             "fidelity_pass_rate": 0.0,
+            "avg_fidelity_score": 0.0,
+            "avg_rouge_l": 0.0,
             "avg_truncated_length": 0.0,
             "avg_length_vs_target": 0.0,
         },
@@ -237,6 +397,8 @@ def run_benchmark() -> dict:
     old_bracket_ok, new_bracket_ok = 0, 0
     old_fidelity_ok, new_fidelity_ok = 0, 0
     old_lengths, new_lengths = [], []
+    old_fid_scores, new_fid_scores = [], []
+    old_rouge_s, new_rouge_s = [], []
 
     for tc in TEST_CASES:
         desc = tc["desc"]
@@ -281,6 +443,20 @@ def run_benchmark() -> dict:
         old_lengths.append(old_len)
         new_lengths.append(new_len)
 
+        # ── Semantic Fidelity composite score (Layer 2) ──
+        sf_old = SemanticFidelity(desc, old_result)
+        sf_new = SemanticFidelity(desc, new_result)
+        old_fs = sf_old.composite_score()
+        new_fs = sf_new.composite_score()
+        old_fid_scores.append(old_fs)
+        new_fid_scores.append(new_fs)
+
+        # ── ROUGE-L similarity (Layer 3) ──
+        old_rl = rouge_l_similarity(desc, old_result.rstrip("."))
+        new_rl = rouge_l_similarity(desc, new_result.rstrip("."))
+        old_rouge_s.append(old_rl)
+        new_rouge_s.append(new_rl)
+
         # Lost entities detail
         lost_old = orig_entities - old_entities
         lost_new = orig_entities - new_entities
@@ -301,6 +477,10 @@ def run_benchmark() -> dict:
             "new_bracket_safe": new_bracket,
             "old_fidelity_pass": old_fid,
             "new_fidelity_pass": new_fid,
+            "old_fidelity_score": old_fs,
+            "new_fidelity_score": new_fs,
+            "old_rouge_l": old_rl,
+            "new_rouge_l": new_rl,
         }
         results["cases"].append(case_result)
 
@@ -313,6 +493,8 @@ def run_benchmark() -> dict:
     results["summary_old"]["fidelity_pass_rate"] = round(old_fidelity_ok / n * 100, 1)
     results["summary_old"]["avg_truncated_length"] = round(sum(old_lengths) / n, 1)
     results["summary_old"]["avg_length_vs_target"] = round(sum(old_lengths) / n / 180 * 100, 1)
+    results["summary_old"]["avg_fidelity_score"] = round(sum(old_fid_scores) / n, 3)
+    results["summary_old"]["avg_rouge_l"] = round(sum(old_rouge_s) / n, 3)
 
     # New summary
     results["summary_new"]["entity_preservation_rate"] = round(new_entity_preserved / max(new_entity_total, 1) * 100, 1)
@@ -321,6 +503,8 @@ def run_benchmark() -> dict:
     results["summary_new"]["fidelity_pass_rate"] = round(new_fidelity_ok / n * 100, 1)
     results["summary_new"]["avg_truncated_length"] = round(sum(new_lengths) / n, 1)
     results["summary_new"]["avg_length_vs_target"] = round(sum(new_lengths) / n / 180 * 100, 1)
+    results["summary_new"]["avg_fidelity_score"] = round(sum(new_fid_scores) / n, 3)
+    results["summary_new"]["avg_rouge_l"] = round(sum(new_rouge_s) / n, 3)
 
     return results
 
@@ -354,6 +538,8 @@ def print_report(results: dict) -> None:
         ("句/从句边界率 (%)", "sentence_boundary_rate"),
         ("括号安全性 (%)", "bracket_safety_rate"),
         ("保真度通过率 (%)", "fidelity_pass_rate"),
+        ("综合保真度 (0-1)", "avg_fidelity_score"),
+        ("ROUGE-L 相似度", "avg_rouge_l"),
         ("平均截断长度 (字符)", "avg_truncated_length"),
         ("长度 vs 目标 180 (%)", "avg_length_vs_target"),
     ]
@@ -388,6 +574,11 @@ def print_report(results: dict) -> None:
         if case["new_lost"]:
             print(f"      新丢失: {case['new_lost']}")
         print(f"    句边界: 旧={old_sent} 新={new_sent} | 括号: 旧={old_bkt} 新={new_bkt} | 保真: 旧={old_fid} 新={new_fid}")
+        old_fs = case.get("old_fidelity_score", 0)
+        new_fs = case.get("new_fidelity_score", 0)
+        old_rl = case.get("old_rouge_l", 0)
+        new_rl = case.get("new_rouge_l", 0)
+        print(f"    保真度: 旧={old_fs:.3f} 新={new_fs:.3f} | ROUGE-L: 旧={old_rl:.3f} 新={new_rl:.3f}")
 
     # ── Key findings ──
     print()

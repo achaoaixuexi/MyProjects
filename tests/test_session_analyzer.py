@@ -324,7 +324,7 @@ class TestAnalyzeIntegration:
             ] * 5,
             "checkpoints": [],
         }
-        result = analyze(data)
+        result = analyze(data, use_cache=False)
         assert result["total_findings"] > 0
         assert result["sessions_analyzed"] == 1
         assert result["turns_analyzed"] == 25

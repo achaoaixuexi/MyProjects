@@ -267,10 +267,56 @@ def cross_reference(runtime_findings: list[dict], static_findings: list[dict]) -
 # Main analysis
 # ---------------------------------------------------------------------------
 
-def analyze(data: dict, static_findings: list[dict] | None = None) -> dict:
+def _filter_sessions(data: dict, session_ids: list[str]) -> dict:
+    """Return a copy of *data* containing only the listed session_ids."""
+    sid_set = set(session_ids)
+    return {
+        **data,
+        "sessions": [s for s in data.get("sessions", [])
+                      if s.get("id", "") in sid_set],
+        "turns": [t for t in data.get("turns", [])
+                   if t.get("session_id", "") in sid_set],
+        "session_files": [f for f in data.get("session_files", [])
+                           if f.get("session_id", "") in sid_set],
+        "checkpoints": [c for c in data.get("checkpoints", [])
+                         if c.get("session_id", "") in sid_set],
+        "events": [e for e in data.get("events", [])
+                    if e.get("session_id", "") in sid_set],
+    }
+
+
+def analyze(data: dict, static_findings: list[dict] | None = None,
+            use_cache: bool = True) -> dict:
     """Run all runtime analyses and return structured results."""
     backend = data.get("backend", "unknown")
     all_findings: list[dict] = []
+
+    # ── Session-level cache: skip already-analysed sessions ──
+    sessions = data.get("sessions", [])
+    if use_cache and sessions:
+        from cache import SessionCache
+        sc = SessionCache(Path.cwd())
+        all_ids = [s.get("id", "") for s in sessions]
+        new_ids = [sid for sid in all_ids if not sc.is_analyzed(sid)]
+        if not new_ids and all_ids:
+            # All sessions already analysed
+            return {
+                "backend": backend,
+                "analysis_time": datetime.now().isoformat(),
+                "findings": [],
+                "total_findings": 0,
+                "by_severity": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+                "total_tokens_wasted_est": 0,
+                "cross_references": [],
+                "sessions_analyzed": len(all_ids),
+                "turns_analyzed": len(data.get("turns", [])),
+                "events_analyzed": len(data.get("events", [])),
+                "cached": True,
+            }
+        # Filter data for new sessions only
+        if new_ids and len(new_ids) < len(all_ids):
+            data = _filter_sessions(data, new_ids)
+        sc.mark_analyzed_batch(all_ids)
 
     detectors = [
         detect_long_sessions_without_compaction,

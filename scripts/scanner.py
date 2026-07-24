@@ -51,7 +51,8 @@ WORKBUDDY_ALWAYS_ON = ["IDENTITY.md", "MEMORY.md", "SOUL.md", "BOOTSTRAP.md", "U
 IGNORE_PATTERNS = [".fallback.bak", "_bm_skillid_migration.json"]
 
 
-def discover_files(root: Path, platform: str = "copilot") -> dict[str, list[str]]:
+def discover_files(root: Path, platform: str = "copilot",
+                   max_depth: int = 5, max_files: int = 1000) -> dict[str, list[str]]:
     """Walk root and discover all relevant configuration files."""
     dirs = SEARCH_DIRS[:]
     if platform == "workbuddy":
@@ -79,6 +80,13 @@ def discover_files(root: Path, platform: str = "copilot") -> dict[str, list[str]
         ]:
             for f in search_path.glob(rglob_pattern):
                 fpath = str(f)
+                # Depth filter — count path parts relative to root
+                try:
+                    rel = Path(fpath).relative_to(root)
+                    if len(rel.parts) > max_depth:
+                        continue
+                except ValueError:
+                    pass  # not relative to root — accept
                 if any(pat in fpath for pat in IGNORE_PATTERNS):
                     continue
                 found_sets[key].add(fpath)  # set ensures no duplicates
@@ -94,7 +102,9 @@ def discover_files(root: Path, platform: str = "copilot") -> dict[str, list[str]
             if loc.exists():
                 found_sets["always_on"].add(str(loc))
 
-    found = {k: sorted(v) for k, v in found_sets.items()}
+    found = {}
+    for k, v in found_sets.items():
+        found[k] = sorted(v)[:max_files]
     return found
 
 
@@ -416,13 +426,15 @@ def check_workbuddy_extra_frontmatter(frontmatter: dict, filepath: str) -> Findi
 # Main scan logic
 # ---------------------------------------------------------------------------
 
-def scan(target_dir: str, platform: str = "copilot") -> dict:
+def scan(target_dir: str, platform: str = "copilot",
+         max_depth: int = 5, max_files: int = 1000,
+         use_cache: bool = True) -> dict:
     """Run all checks and return structured results."""
     root = Path(target_dir).resolve()
     if not root.is_dir():
         return {"error": f"目录不存在: {target_dir}", "findings": [], "summary": {}}
 
-    found = discover_files(root, platform)
+    found = discover_files(root, platform, max_depth=max_depth, max_files=max_files)
 
     findings: list[dict] = []
 
@@ -550,6 +562,10 @@ def main():
                         help="扫描目录最大深度（默认 5）")
     parser.add_argument("--max-files", type=int, default=1000,
                         help="扫描文件数量上限（默认 1000）")
+    parser.add_argument("--cache", action="store_true", default=True,
+                        help="启用文件级缓存以加速重复扫描（默认启用）")
+    parser.add_argument("--no-cache", action="store_false", dest="cache",
+                        help="禁用缓存，强制全量扫描")
     args = parser.parse_args()
 
     # Validate output path
@@ -560,7 +576,9 @@ def main():
             print(f"错误: {e}", file=sys.stderr)
             sys.exit(1)
 
-    result = scan(args.target, platform=args.platform)
+    result = scan(args.target, platform=args.platform,
+                  max_depth=args.max_depth, max_files=args.max_files,
+                  use_cache=args.cache)
     indent = 2 if args.pretty else None
 
     if args.output:

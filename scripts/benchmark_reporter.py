@@ -21,8 +21,120 @@ from common import safe_int, safe_output_path
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Quality assessment — Layer 1: Finding consistency & Layer 3: ROUGE-L
 # ---------------------------------------------------------------------------
+
+def compare_findings(control_findings: list[dict],
+                     experiment_findings: list[dict]) -> dict:
+    """Compare scanner findings between control and experiment runs.
+
+    Returns precision / recall / F1 for finding-ids, plus false positive
+    and false negative lists.
+    """
+    c_ids = {f.get("id", "") for f in control_findings}
+    e_ids = {f.get("id", "") for f in experiment_findings}
+
+    if not c_ids and not e_ids:
+        return {"precision": 1.0, "recall": 1.0, "f1": 1.0,
+                "false_positives": [], "false_negatives": [],
+                "note": "both empty — trivially consistent"}
+
+    tp = len(c_ids & e_ids)
+    fp_ids = e_ids - c_ids
+    fn_ids = c_ids - e_ids
+
+    precision = tp / len(e_ids) if e_ids else 1.0
+    recall    = tp / len(c_ids) if c_ids else 1.0
+    f1        = (2 * precision * recall / (precision + recall)
+                 if (precision + recall) > 0 else 0.0)
+
+    return {
+        "precision": round(precision, 3),
+        "recall": round(recall, 3),
+        "f1": round(f1, 3),
+        "false_positives": sorted(fp_ids),
+        "false_negatives": sorted(fn_ids),
+        "control_count": len(c_ids),
+        "experiment_count": len(e_ids),
+    }
+
+
+def rouge_l_similarity(reference: str, candidate: str) -> float:
+    """Compute ROUGE-L F1 score (pure-Python, zero-dependency).
+
+    Returns 0.0–1.0 where 1.0 = identical.  Suitable for texts < 500 chars.
+    """
+    ref_words = reference.split()
+    cand_words = candidate.split()
+    m, n = len(ref_words), len(cand_words)
+    if m == 0 and n == 0:
+        return 1.0
+    if m == 0 or n == 0:
+        return 0.0
+
+    # LCS — space-optimised 2-row DP, O(m*n)
+    prev = [0] * (n + 1)
+    for i in range(1, m + 1):
+        curr = [0] * (n + 1)
+        for j in range(1, n + 1):
+            if ref_words[i - 1] == cand_words[j - 1]:
+                curr[j] = prev[j - 1] + 1
+            else:
+                curr[j] = max(prev[j], curr[j - 1])
+        prev = curr
+    lcs_len = prev[n]
+
+    recall_val    = lcs_len / m
+    precision_val = lcs_len / n
+    if precision_val + recall_val == 0:
+        return 0.0
+    return 2 * precision_val * recall_val / (precision_val + recall_val)
+
+
+def quality_section_md(findings_consistency: dict | None = None,
+                       rouge_scores: dict | None = None) -> str:
+    """Render a quality-assessment section for the Markdown report."""
+    lines: list[str] = []
+    lines.append("---")
+    lines.append("")
+    lines.append("## 🧪 质量评估")
+    lines.append("")
+
+    if findings_consistency:
+        cons = findings_consistency
+        lines.append("### 检测一致性 (Finding Consistency)")
+        lines.append("")
+        lines.append("| 指标 | 值 |")
+        lines.append("|------|----|")
+        lines.append(f"| Precision | {cons['precision']:.1%} |")
+        lines.append(f"| Recall    | {cons['recall']:.1%} |")
+        lines.append(f"| F1 Score  | {cons['f1']:.1%} |")
+        lines.append(f"| 对照组发现数 | {cons['control_count']} |")
+        lines.append(f"| 实验组发现数 | {cons['experiment_count']} |")
+        if cons.get("false_positives"):
+            lines.append(f"| 误报 (FP) | {', '.join(cons['false_positives'])} |")
+        if cons.get("false_negatives"):
+            lines.append(f"| 漏报 (FN) | {', '.join(cons['false_negatives'])} |")
+        lines.append("")
+
+    if rouge_scores:
+        lines.append("### 语义保真度 (ROUGE-L)")
+        lines.append("")
+        lines.append("| 任务 | ROUGE-L | 判定 |")
+        lines.append("|------|:---:|:---:|")
+        for task_id, score in rouge_scores.items():
+            if score >= 0.7:
+                status = "✅ 合格"
+            elif score >= 0.5:
+                status = "⚠️ 偏低"
+            else:
+                status = "❌ 不合格"
+            lines.append(f"| {task_id} | {score:.3f} | {status} |")
+        lines.append("")
+        lines.append("> ROUGE-L ≥ 0.7 视为语义保真度合格。")
+        lines.append("")
+
+    return "\n".join(lines)
 
 
 def _format_tokens(n: int) -> str:
