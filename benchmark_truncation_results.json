@@ -1,0 +1,346 @@
+{
+  "test_date": "2026-07-24",
+  "num_test_cases": 10,
+  "cases": [
+    {
+      "id": "date_near_boundary",
+      "desc_len": 278,
+      "old_len": 177,
+      "new_len": 177,
+      "orig_entities": [
+        "2026-07-15"
+      ],
+      "old_preserved": [
+        "2026-07-15"
+      ],
+      "new_preserved": [
+        "2026-07-15"
+      ],
+      "old_lost": [],
+      "new_lost": [],
+      "old_sentence_boundary": true,
+      "new_sentence_boundary": true,
+      "old_bracket_safe": true,
+      "new_bracket_safe": true,
+      "old_fidelity_pass": true,
+      "new_fidelity_pass": true
+    },
+    {
+      "id": "date_deep_in_text",
+      "desc_len": 370,
+      "old_len": 178,
+      "new_len": 214,
+      "orig_entities": [
+        "2026-07-23",
+        "SKILL",
+        "VS"
+      ],
+      "old_preserved": [
+        "VS"
+      ],
+      "new_preserved": [
+        "SKILL",
+        "VS"
+      ],
+      "old_lost": [
+        "2026-07-23",
+        "SKILL"
+      ],
+      "new_lost": [
+        "2026-07-23"
+      ],
+      "old_sentence_boundary": true,
+      "new_sentence_boundary": true,
+      "old_bracket_safe": true,
+      "new_bracket_safe": true,
+      "old_fidelity_pass": true,
+      "new_fidelity_pass": true
+    },
+    {
+      "id": "url_near_boundary",
+      "desc_len": 294,
+      "old_len": 168,
+      "new_len": 181,
+      "orig_entities": [
+        "API",
+        "https://api",
+        "https://docs"
+      ],
+      "old_preserved": [
+        "API",
+        "https://api"
+      ],
+      "new_preserved": [
+        "API",
+        "https://api",
+        "https://docs"
+      ],
+      "old_lost": [
+        "https://docs"
+      ],
+      "new_lost": [],
+      "old_sentence_boundary": true,
+      "new_sentence_boundary": true,
+      "old_bracket_safe": true,
+      "new_bracket_safe": true,
+      "old_fidelity_pass": true,
+      "new_fidelity_pass": true
+    },
+    {
+      "id": "code_terms_near_boundary",
+      "desc_len": 371,
+      "old_len": 172,
+      "new_len": 198,
+      "orig_entities": [
+        "DI",
+        "`@depends(get_db)`",
+        "`@router.get('/items/{item_id}')`",
+        "`FastAPI`",
+        "`SQLAlchemy`",
+        "`asyncio_mode = auto`",
+        "`black --line-length 100`",
+        "`mypy --strict`",
+        "`pytest.ini`"
+      ],
+      "old_preserved": [
+        "`FastAPI`",
+        "`SQLAlchemy`",
+        "`black --line-length 100`",
+        "`mypy --strict`"
+      ],
+      "new_preserved": [
+        "`FastAPI`",
+        "`SQLAlchemy`",
+        "`black --line-length 100`",
+        "`mypy --strict`"
+      ],
+      "old_lost": [
+        "DI",
+        "`@depends(get_db)`",
+        "`@router.get('/items/{item_id}')`",
+        "`asyncio_mode = auto`",
+        "`pytest.ini`"
+      ],
+      "new_lost": [
+        "DI",
+        "`@depends(get_db)`",
+        "`@router.get('/items/{item_id}')`",
+        "`asyncio_mode = auto`",
+        "`pytest.ini`"
+      ],
+      "old_sentence_boundary": true,
+      "new_sentence_boundary": true,
+      "old_bracket_safe": true,
+      "new_bracket_safe": true,
+      "old_fidelity_pass": true,
+      "new_fidelity_pass": true
+    },
+    {
+      "id": "camelcase_acronyms",
+      "desc_len": 295,
+      "old_len": 178,
+      "new_len": 174,
+      "orig_entities": [
+        "API",
+        "AWS",
+        "CI",
+        "GitHub",
+        "HelmCharts",
+        "ReactQuery",
+        "SecretsManager",
+        "version 3.12"
+      ],
+      "old_preserved": [
+        "API",
+        "AWS",
+        "CI",
+        "GitHub",
+        "ReactQuery",
+        "SecretsManager"
+      ],
+      "new_preserved": [
+        "API",
+        "AWS",
+        "CI",
+        "GitHub",
+        "ReactQuery",
+        "SecretsManager"
+      ],
+      "old_lost": [
+        "HelmCharts",
+        "version 3.12"
+      ],
+      "new_lost": [
+        "HelmCharts",
+        "version 3.12"
+      ],
+      "old_sentence_boundary": true,
+      "new_sentence_boundary": true,
+      "old_bracket_safe": true,
+      "new_bracket_safe": true,
+      "old_fidelity_pass": true,
+      "new_fidelity_pass": true
+    },
+    {
+      "id": "bracket_safety",
+      "desc_len": 470,
+      "old_len": 174,
+      "new_len": 164,
+      "orig_entities": [
+        "AP",
+        "SKILL",
+        "VS",
+        "WB"
+      ],
+      "old_preserved": [
+        "AP",
+        "SKILL",
+        "VS"
+      ],
+      "new_preserved": [
+        "AP",
+        "SKILL",
+        "VS"
+      ],
+      "old_lost": [
+        "WB"
+      ],
+      "new_lost": [
+        "WB"
+      ],
+      "old_sentence_boundary": true,
+      "new_sentence_boundary": true,
+      "old_bracket_safe": true,
+      "new_bracket_safe": true,
+      "old_fidelity_pass": true,
+      "new_fidelity_pass": true
+    },
+    {
+      "id": "chinese_trigger_words",
+      "desc_len": 259,
+      "old_len": 172,
+      "new_len": 216,
+      "orig_entities": [
+        "AI",
+        "VS",
+        "`python scripts/scanner.py . -o result.json`",
+        "`session_analyzer.py`"
+      ],
+      "old_preserved": [
+        "AI",
+        "VS",
+        "`session_analyzer.py`"
+      ],
+      "new_preserved": [
+        "AI",
+        "VS",
+        "`session_analyzer.py`"
+      ],
+      "old_lost": [
+        "`python scripts/scanner.py . -o result.json`"
+      ],
+      "new_lost": [
+        "`python scripts/scanner.py . -o result.json`"
+      ],
+      "old_sentence_boundary": true,
+      "new_sentence_boundary": true,
+      "old_bracket_safe": true,
+      "new_bracket_safe": true,
+      "old_fidelity_pass": true,
+      "new_fidelity_pass": true
+    },
+    {
+      "id": "version_numbers",
+      "desc_len": 374,
+      "old_len": 176,
+      "new_len": 176,
+      "orig_entities": [
+        "version 1.5.2",
+        "version 2.0.0",
+        "version 3.12"
+      ],
+      "old_preserved": [
+        "version 1.5.2",
+        "version 2.0.0"
+      ],
+      "new_preserved": [
+        "version 1.5.2",
+        "version 2.0.0"
+      ],
+      "old_lost": [
+        "version 3.12"
+      ],
+      "new_lost": [
+        "version 3.12"
+      ],
+      "old_sentence_boundary": true,
+      "new_sentence_boundary": true,
+      "old_bracket_safe": true,
+      "new_bracket_safe": true,
+      "old_fidelity_pass": true,
+      "new_fidelity_pass": true
+    },
+    {
+      "id": "short_desc",
+      "desc_len": 47,
+      "old_len": 46,
+      "new_len": 46,
+      "orig_entities": [],
+      "old_preserved": [],
+      "new_preserved": [],
+      "old_lost": [],
+      "new_lost": [],
+      "old_sentence_boundary": true,
+      "new_sentence_boundary": true,
+      "old_bracket_safe": true,
+      "new_bracket_safe": true,
+      "old_fidelity_pass": true,
+      "new_fidelity_pass": true
+    },
+    {
+      "id": "entities_all_past_boundary",
+      "desc_len": 417,
+      "old_len": 178,
+      "new_len": 178,
+      "orig_entities": [
+        "API",
+        "https://example",
+        "version 16.3"
+      ],
+      "old_preserved": [],
+      "new_preserved": [],
+      "old_lost": [
+        "API",
+        "https://example",
+        "version 16.3"
+      ],
+      "new_lost": [
+        "API",
+        "https://example",
+        "version 16.3"
+      ],
+      "old_sentence_boundary": true,
+      "new_sentence_boundary": true,
+      "old_bracket_safe": true,
+      "new_bracket_safe": true,
+      "old_fidelity_pass": true,
+      "new_fidelity_pass": true
+    }
+  ],
+  "summary_old": {
+    "entity_preservation_rate": 57.9,
+    "sentence_boundary_rate": 100.0,
+    "bracket_safety_rate": 100.0,
+    "fidelity_pass_rate": 100.0,
+    "avg_truncated_length": 161.9,
+    "avg_length_vs_target": 89.9
+  },
+  "summary_new": {
+    "entity_preservation_rate": 63.2,
+    "sentence_boundary_rate": 100.0,
+    "bracket_safety_rate": 100.0,
+    "fidelity_pass_rate": 100.0,
+    "avg_truncated_length": 172.4,
+    "avg_length_vs_target": 95.8
+  }
+}

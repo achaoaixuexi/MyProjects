@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+*.bak
+tmp_*
+test_result.json
+test_report.md
+sample_*.json
