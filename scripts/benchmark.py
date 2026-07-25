@@ -93,6 +93,39 @@ TASKS = [
         "expected_turns": "10+ 轮",
         "category": "长对话",
     },
+    # ── Phase 4: Programming-project benchmarks ──
+    {
+        "id": "T9",
+        "name": "大文件读取优化",
+        "complexity": "中等",
+        "prompt": "我的项目有一个 1200 行的 src/database.py 文件。请只查看第 100-150 行的函数定义，不要读取整个文件。然后帮我添加类型注解。",
+        "expected_turns": "2-3 轮",
+        "category": "编程优化",
+    },
+    {
+        "id": "T10",
+        "name": "并行工具调用",
+        "complexity": "中等",
+        "prompt": "请同时检查以下三个文件的代码质量：src/api/handlers.py、src/models/user.py、src/utils/helpers.py。分别指出每个文件的问题。",
+        "expected_turns": "2-3 轮",
+        "category": "编程优化",
+    },
+    {
+        "id": "T11",
+        "name": "跨轮信息缓存",
+        "complexity": "复杂",
+        "prompt": "我有一个微服务项目，涉及 5 个服务。请：1) 先了解整体架构 2) 帮我添加一个新的 API 端点 3) 为这个端点写单元测试。每个步骤之间，请确保复用之前获取的信息，避免重复读取文件。",
+        "expected_turns": "5-8 轮",
+        "category": "编程优化",
+    },
+    {
+        "id": "T12",
+        "name": ".gitignore 缺失检测",
+        "complexity": "简单",
+        "prompt": "我的项目根目录没有 .gitignore 文件，node_modules 和 .venv 目录占用了大量空间。请帮我创建一个合适的 .gitignore 文件，并解释为什么这对 token 优化很重要。",
+        "expected_turns": "1-2 轮",
+        "category": "编程优化",
+    },
 ]
 
 
@@ -244,7 +277,7 @@ def main():
 
     # record
     rec_parser = sub.add_parser("record", help="记录一次测试会话")
-    rec_parser.add_argument("task_id", help="任务 ID (T1-T8)")
+    rec_parser.add_argument("task_id", help="任务 ID (T1-T12)")
     rec_parser.add_argument("mode", choices=["control", "experiment"], help="对照组或实验组")
     rec_parser.add_argument("session_id", help="Copilot session ID")
 

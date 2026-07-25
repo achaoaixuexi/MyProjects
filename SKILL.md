@@ -123,8 +123,26 @@ python scripts/reporter.py runtime_result.json -o deep_report.md
 - RP-04: 同一文件被重复读取
 - RP-05: 用户消息过长（应使用文件引用）
 - RP-06: Token 消耗异常的会话
+- RP-07: 全文件读取/小修改比失衡（编程场景）
+- RP-08: 工具调用串行化（编程场景）
+- RP-09: 内联代码未使用 @file 引用（编程场景）
+- RP-10: 重复读取未变更文件（编程场景）
+- RP-11: 冗余代码输出（编程场景）
+- RP-12: 未使用 Session Memory 缓存（编程场景）
 
-### Step 4: 按清单复查
+### Step 4: 编程项目分析（新增）
+运行 [project_analyzer.py](./scripts/project_analyzer.py) 分析源码项目的 token 浪费：
+```bash
+python scripts/project_analyzer.py <项目目录> -o project_result.json --pretty
+```
+
+检测的项目级反模式：
+- 大型单体源文件（>500 行）
+- 未排除的重量级目录（node_modules/.venv 等）
+- 依赖膨胀估算
+- Token 节省率预估（基于典型编程会话）
+
+### Step 5: 按清单复查
 参考 [优化检查清单](./references/checklist.md) 手动复查，确保无遗漏。
 
 ## 触发场景
@@ -135,6 +153,7 @@ python scripts/reporter.py runtime_result.json -o deep_report.md
 | 优化配置 | "怎么减少 token 使用"、"优化 skill 配置" |
 | 生成报告 | "生成 token 使用报告" |
 | 检查单个文件 | "检查这个 SKILL.md 的 token 效率" |
+| 编程项目分析 | "分析我的项目 token 浪费"、"检查代码项目效率" |
 
 ## 平台支持
 
@@ -148,3 +167,4 @@ python scripts/reporter.py runtime_result.json -o deep_report.md
 - 静态分析估算基于文件大小和反模式计数，非精确 token 数
 - 运行时分析依赖 session store 数据，需在 Copilot 环境中触发
 - 修复建议需人工审核，`--fix` 模式仅处理安全操作
+- 编程项目分析需项目根目录包含源码文件，推荐搭配 `--learn` 启用自适应阈值

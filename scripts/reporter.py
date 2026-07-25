@@ -283,7 +283,65 @@ def main():
         print(report)
 
 
-def generate_runtime_report(data: dict) -> str:
+def generate_project_section(project_data: dict) -> str:
+    """Generate a programming-project analysis section for the Markdown report."""
+    summary = project_data.get("summary", {})
+    savings = project_data.get("savings_estimate", {})
+
+    lines: list[str] = []
+    lines.append("---")
+    lines.append("")
+    lines.append("## 💻 编程项目分析")
+    lines.append("")
+
+    # Project overview
+    lines.append("### 项目概况")
+    lines.append("")
+    lines.append("| 指标 | 值 |")
+    lines.append("|------|----|")
+    lines.append(f"| 大型源文件 (>500行) | **{summary.get('large_source_files', 0)}** 个 |")
+    lines.append(f"| 最大文件行数 | **{summary.get('largest_file_lines', 0)}** 行 |")
+    lines.append(f"| 未排除目录 | **{summary.get('unprotected_dirs', 0)}** 个 |")
+    lines.append(f"| 依赖膨胀文件数 | **{summary.get('bloat_file_count', 0)}** 个 |")
+    lines.append("")
+
+    # Token savings estimate
+    if savings:
+        lines.append("### Token 节省率预估")
+        lines.append("")
+        lines.append("| 指标 | 值 |")
+        lines.append("|------|----|")
+        lines.append(f"| 预估浪费总量 | **{savings.get('est_waste_total', 0):,}** tokens |")
+        lines.append(f"| 每会话预估节省 | **{savings.get('est_savings_per_session', 0):,}** tokens |")
+        lines.append(f"| 节省比例 | **{savings.get('est_savings_pct', 'N/A')}** |")
+        lines.append(f"| 估算说明 | {savings.get('note', '')} |")
+        lines.append("")
+
+    # Large files list
+    large_files = project_data.get("large_files", [])
+    if large_files:
+        lines.append("### 大型源文件 TOP 5")
+        lines.append("")
+        lines.append("| 文件 | 行数 | 预估 token/次 |")
+        lines.append("|------|:---:|:---:|")
+        for lf in large_files[:5]:
+            lines.append(f"| `{lf.get('path', '')}` | {lf.get('lines', 0)} | {lf.get('est_tokens_per_read', 0):,} |")
+        lines.append("")
+
+    # Unprotected dirs
+    dirs_info = project_data.get("directories", {})
+    unprotected = dirs_info.get("unprotected", [])
+    if unprotected:
+        lines.append("### 未排除目录")
+        lines.append("")
+        lines.append(f"以下目录未被 `.gitignore` 排除，Agent 扫描时会遍历其中文件：")
+        lines.append("")
+        for d in unprotected:
+            lines.append(f"- `{d}/`")
+        lines.append("")
+        lines.append("**建议**: 在 `.gitignore` 中添加上述目录以提升扫描效率。")
+
+    return "\n".join(lines)
     """Generate Markdown report from runtime analysis data."""
     backend = data.get("backend", "unknown")
     findings = data.get("findings", [])

@@ -26,6 +26,7 @@ Input JSON format (what the agent should collect via copilot_sessionStoreSql):
 
 import json
 import argparse
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -233,6 +234,273 @@ def detect_token_heavy_sessions(data: dict) -> list[SessionFinding]:
 
 
 # ---------------------------------------------------------------------------
+# Phase 1: Programming-project token waste detectors  (RP-07 ~ RP-10)
+# ---------------------------------------------------------------------------
+
+def detect_full_file_minor_edit(data: dict) -> list[SessionFinding]:
+    """RP-07: Large file reads with minimal edit scope.
+
+    Detects when an agent reads a large file (>500 lines) but the user's
+    actual change request only touches a tiny portion of it (<5% of lines).
+    """
+    findings = []
+    session_files = data.get("session_files", [])
+    # Group reads by (session_id, file_path)
+    from collections import defaultdict
+    file_reads: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for f in session_files:
+        key = (f.get("session_id", ""), f.get("file_path", ""))
+        file_reads[key].append(f)
+
+    for (sid, fpath), entries in file_reads.items():
+        for e in entries:
+            start = safe_int(e.get("start_line", 1))
+            end = safe_int(e.get("end_line", 0))
+            total_read = end - start + 1 if end >= start else 0
+            # Heuristic: if read >500 lines, flag as potential waste
+            # (actual edit scope unknown — estimated from typical patterns)
+            if total_read > 500:
+                est_waste = (total_read - 50) * 3  # assume ~50 useful lines
+                findings.append(SessionFinding(
+                    "RP-07", "high",
+                    f"全文件读取 `{Path(fpath).name}` ({total_read} 行)，"
+                    f"建议使用 read_file(startLine, endLine) 精确范围",
+                    session_id=sid,
+                    tokens_wasted=max(0, est_waste),
+                    suggestion=f"预估仅需 <=50 行上下文，使用 startLine/endLine 限制范围"
+                ))
+    return findings
+
+
+def detect_sequential_tool_calls(data: dict) -> list[SessionFinding]:
+    """RP-08: Independent read/search calls executed serially instead of parallel.
+
+    Detects 3+ consecutive independent read_file/grep_search calls that
+    could have been parallelised.
+    """
+    findings = []
+    tool_calls = data.get("tool_calls", data.get("events", []))
+    if not tool_calls:
+        return findings
+
+    # Extract tool_name from events/tool_calls
+    independent_tools = {"read_file", "grep_search", "list_dir", "file_search"}
+    streak = 0
+    streak_sid = ""
+    streak_start = 0
+    for i, tc in enumerate(tool_calls):
+        name = tc.get("tool_name", tc.get("type", ""))
+        sid = tc.get("session_id", "")
+        if name in independent_tools:
+            if streak == 0:
+                streak_sid = sid
+                streak_start = i
+            streak += 1
+        else:
+            if streak >= 3:
+                est_waste = (streak - 1) * 500
+                findings.append(SessionFinding(
+                    "RP-08", "medium",
+                    f"连续 {streak} 个独立 {name if streak==1 else '工具'} 调用未并行化，浪费等待时间",
+                    session_id=streak_sid,
+                    tokens_wasted=est_waste,
+                    suggestion="将无依赖关系的独立工具调用合并为并行执行"
+                ))
+            streak = 0
+    # End-of-list flush
+    if streak >= 3:
+        findings.append(SessionFinding(
+            "RP-08", "medium",
+            f"末尾连续 {streak} 个独立工具调用未并行化",
+            session_id=streak_sid,
+            tokens_wasted=(streak - 1) * 500,
+            suggestion="将无依赖关系的独立工具调用合并为并行执行"
+        ))
+    return findings
+
+
+def detect_repeated_unchanged_reads(data: dict) -> list[SessionFinding]:
+    """RP-10: Same file read multiple times across turns without modification.
+
+    Extends RP-04 by also incorporating file-modification awareness:
+    if the file's mtime hasn't changed between reads, the re-read is waste.
+    """
+    findings = []
+    session_files = data.get("session_files", [])
+    if not session_files:
+        return findings
+
+    from collections import defaultdict
+    file_reads: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for f in session_files:
+        key = (f.get("session_id", ""), f.get("file_path", ""))
+        file_reads[key].append(f)
+
+    for (sid, fpath), entries in file_reads.items():
+        count = len(entries)
+        if count >= 3:
+            # Check if mtime data is available in the entries
+            mtimes = set()
+            for e in entries:
+                mtime = e.get("file_mtime", e.get("mtime", ""))
+                if mtime:
+                    mtimes.add(str(mtime))
+            # If all mtimes identical or no mtime data, flag as unchanged
+            unchanged = len(mtimes) <= 1
+            if unchanged:
+                est_waste = (count - 1) * 500 + (
+                    (count - 2) * 200 if count >= 4 else 0)
+                suggest = (
+                    "将文件内容缓存至 /memories/session/ 避免跨轮重复读取"
+                    if count >= 4 else "考虑一次性读取足够范围，避免多次小范围读取")
+                findings.append(SessionFinding(
+                    "RP-10", "medium",
+                    f"文件 `{Path(fpath).name}` 跨轮读取 {count} 次且未变更，"
+                    f"可缓存避免重复加载",
+                    session_id=sid,
+                    tokens_wasted=est_waste,
+                    suggestion=suggest
+                ))
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Message-quality & Session-memory detectors  (RP-09, RP-11, RP-12)
+# ---------------------------------------------------------------------------
+
+def detect_inline_code_without_file_ref(data: dict) -> list[SessionFinding]:
+    """RP-09: Large inline code blocks in user messages without @file reference.
+
+    Detects when users paste >500 chars of code directly into the message
+    instead of saving to a file and using @file.  Inline code inflates
+    the user-message token count substantially.
+    """
+    findings = []
+    turns = data.get("turns", [])
+    for t in turns:
+        msg = t.get("user_message", "") or t.get("user_content", "")
+        # Detect fenced code blocks
+        code_blocks = re.findall(r'```[\s\S]*?```', msg)
+        total_code_len = sum(len(b) for b in code_blocks)
+        # Also detect indented code (4-space prefix)
+        indented_lines = [l for l in msg.split('\n')
+                          if l.startswith('    ') and len(l.strip()) > 0]
+        total_code_len += sum(len(l) for l in indented_lines)
+        # Check for @file reference
+        has_file_ref = bool(re.search(r'@\S+\.\w{1,6}', msg))
+
+        if total_code_len > 500 and not has_file_ref:
+            est_waste = total_code_len // 3  # ~1 token per 3 chars of code
+            findings.append(SessionFinding(
+                "RP-09", "medium",
+                f"消息中含 {total_code_len} 字符的内联代码但未使用 @file 引用，"
+                f"建议保存为文件后引用以减少上下文膨胀",
+                session_id=t.get("session_id", ""),
+                tokens_wasted=est_waste,
+                suggestion="将代码保存为 .py/.ts 文件，使用 @file 引用替代直接粘贴"
+            ))
+    return findings[:10]
+
+
+def detect_redundant_code_output(data: dict) -> list[SessionFinding]:
+    """RP-11: Agent outputting repetitive or boilerplate code fragments.
+
+    Uses lightweight n-gram overlap to detect when the same substantial
+    code snippet appears multiple times in agent outputs within a session.
+    """
+    findings = []
+    turns = data.get("turns", [])
+    # Extract code blocks from agent responses
+    session_blocks: dict[str, list[str]] = defaultdict(list)
+    for t in turns:
+        sid = t.get("session_id", "")
+        # Agent output could be in assistant_message or response
+        output = t.get("assistant_message", "") or t.get("response", "") or ""
+        blocks = re.findall(r'```[\s\S]*?```', output)
+        for b in blocks:
+            # Normalise: strip the fence markers and leading/trailing whitespace
+            body = re.sub(r'^```\w*\n?', '', b)
+            body = re.sub(r'\n?```$', '', body).strip()
+            if len(body) > 200:  # only track substantial blocks
+                session_blocks[sid].append(body)
+
+    for sid, blocks in session_blocks.items():
+        if len(blocks) < 2:
+            continue
+        # Compare pairs for high overlap (simple line-level Jaccard)
+        duplicates = 0
+        for i in range(len(blocks)):
+            for j in range(i + 1, len(blocks)):
+                lines_i = set(blocks[i].split('\n'))
+                lines_j = set(blocks[j].split('\n'))
+                if not lines_i or not lines_j:
+                    continue
+                overlap = len(lines_i & lines_j) / min(len(lines_i), len(lines_j))
+                if overlap > 0.6:  # >60% line overlap → duplicate
+                    duplicates += 1
+        if duplicates > 0:
+            est_waste = duplicates * 300
+            findings.append(SessionFinding(
+                "RP-11", "low",
+                f"Agent 在会话中输出 {duplicates} 组高度重复的代码片段 (>60% 行重叠)，"
+                f"建议引用前次输出而非重新生成",
+                session_id=sid,
+                tokens_wasted=est_waste,
+                suggestion="使用引用或摘要替代重复输出相同/相似代码"
+            ))
+    return findings[:10]
+
+
+def detect_unused_session_memory(data: dict) -> list[SessionFinding]:
+    """RP-12: Cross-turn information re-queries that could use session memory.
+
+    Detects when the same entity/keyword is queried across multiple turns
+    without apparent caching in /memories/session/.
+    """
+    findings = []
+    turns = data.get("turns", [])
+    if len(turns) < 3:
+        return findings
+
+    # Group user messages by session
+    session_msgs: dict[str, list[str]] = defaultdict(list)
+    for t in turns:
+        sid = t.get("session_id", "")
+        msg = t.get("user_message", "") or t.get("user_content", "")
+        if msg:
+            session_msgs[sid].append(msg)
+
+    for sid, msgs in session_msgs.items():
+        if len(msgs) < 3:
+            continue
+        # Extract key noun phrases / identifiers (simplified: CamelCase + quoted)
+        key_terms: dict[str, int] = defaultdict(int)
+        for msg in msgs:
+            # CamelCase identifiers
+            camels = set(re.findall(r'\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b', msg))
+            # Quoted strings
+            quoted = set(re.findall(r'["\'`]([^"\'`]{4,})["\'`]', msg))
+            # File paths
+            paths = set(re.findall(r'[\w./-]+\.\w{1,6}', msg))
+            for term in camels | quoted | paths:
+                key_terms[term.lower()] += 1
+
+        repeated = {t: c for t, c in key_terms.items() if c >= 3}
+        if len(repeated) >= 3:
+            est_waste = sum(c for c in repeated.values()) * 200
+            examples = sorted(repeated, key=lambda x: -repeated[x])[:3]
+            findings.append(SessionFinding(
+                "RP-12", "medium",
+                f"发现 {len(repeated)} 个关键术语跨轮重复查询（如 {', '.join(examples)}），"
+                f"建议缓存至 /memories/session/",
+                session_id=sid,
+                tokens_wasted=est_waste,
+                suggestion="将频繁查询的关键信息写入 /memories/session/ 避免重复检索"
+            ))
+    return findings[:10]
+
+
+# ---------------------------------------------------------------------------
 # Cross-reference with static findings
 # ---------------------------------------------------------------------------
 
@@ -325,6 +593,14 @@ def analyze(data: dict, static_findings: list[dict] | None = None,
         detect_repeated_file_reads,
         detect_oversized_user_messages,
         detect_token_heavy_sessions,
+        # Phase 1: programming-project detectors
+        detect_full_file_minor_edit,
+        detect_sequential_tool_calls,
+        detect_repeated_unchanged_reads,
+        # Phase 2: message-quality & session-memory detectors
+        detect_inline_code_without_file_ref,
+        detect_redundant_code_output,
+        detect_unused_session_memory,
     ]
 
     for detector in detectors:

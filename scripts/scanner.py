@@ -13,6 +13,7 @@ import re
 import json
 import sys
 import argparse
+from collections import defaultdict
 from pathlib import Path
 from datetime import datetime
 from typing import Any
@@ -392,7 +393,125 @@ def check_excessive_comment_ratio(filepath: str) -> Finding | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Phase 3: Programming-project static anti-patterns  (AP-16 ~ AP-18)
+# ---------------------------------------------------------------------------
+
+
 def check_inline_documentation(filepath: str) -> Finding | None:
+    """AP-09: Large inline documentation blocks in skill/instruction files."""
+    if not (filepath.endswith(".md") or filepath.endswith(".instructions.md")):
+        return None
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="ignore") as fh:
+            content = fh.read()
+    except (FileNotFoundError, PermissionError):
+        return None
+    code_blocks = re.findall(r'```[\s\S]*?```', content)
+    large_blocks = [b for b in code_blocks if b.count('\n') > 20]
+    if len(large_blocks) >= 2:
+        return Finding(
+            "AP-09", "medium", filepath,
+            detail=f"发现 {len(large_blocks)} 个大型代码块（>20行），可能存在内联文档冗余",
+            suggestion="将大型文档/代码示例移入 references/ 或外部文档，使用链接引用",
+            est_savings="按内联内容大小计算，每次加载 500-3000 token"
+        )
+    return None
+
+
+_SOURCE_EXTS = {'.py', '.ts', '.tsx', '.js', '.jsx', '.go', '.rs', '.java',
+                '.cs', '.cpp', '.c', '.rb', '.php', '.swift', '.kt'}
+
+
+def check_monolithic_source(filepath: str) -> Finding | None:
+    """AP-16: Single source file >1000 lines without modular split."""
+    ext = Path(filepath).suffix
+    if ext not in _SOURCE_EXTS:
+        return None
+    lc = count_total_lines(filepath)
+    if lc > 1000:
+        pct_str = f" ({lc/1000:.1f}x 推荐上限)"
+        return Finding(
+            "AP-16", "high", filepath,
+            detail=f"单体源文件 {lc} 行" + pct_str + "，Agent 每次加载大量无关代码",
+            suggestion="拆分为模块（<300 行/文件）或为 Agent 提供 API 摘要文件",
+            est_savings="每次加载 2000-5000 token"
+        )
+    return None
+
+
+def check_missing_gitignore_entries(root: Path) -> list[Finding]:
+    """AP-17: Heavy directories not in .gitignore wasting agent scan time."""
+    findings = []
+    HEAVY_DIRS = ['node_modules', '.venv', 'venv', '__pycache__', 'dist',
+                  'build', '.next', 'target', 'vendor', '.turbo', '.cache']
+    gi = root / '.gitignore'
+    if not gi.exists():
+        present = [d for d in HEAVY_DIRS if (root / d).exists()]
+        if present:
+            findings.append(Finding(
+                "AP-17", "critical", str(root),
+                detail=f"项目无 .gitignore，Agent 将扫描 {len(present)} 个重量级目录",
+                suggestion=f"创建 .gitignore 并添加: {', '.join(present[:5])}",
+                est_savings="每次扫描 2000-8000 token"
+            ))
+        return findings
+
+    try:
+        ignored_content = gi.read_text(encoding='utf-8', errors='ignore')
+    except (OSError, PermissionError):
+        return findings
+    missing = [d for d in HEAVY_DIRS if (root / d).exists() and d not in ignored_content]
+    if missing:
+        findings.append(Finding(
+            "AP-17", "medium", str(gi),
+            detail=f"重量级目录未被 .gitignore 排除: {missing}，Agent 会扫描这些目录",
+            suggestion=f"在 .gitignore 中添加: {', '.join(missing)}",
+            est_savings="每次扫描 500-3000 token"
+        ))
+    return findings
+
+
+def check_config_duplication(found: dict) -> list[Finding]:
+    """AP-18: Hard-coded config values repeated across multiple source files."""
+    findings = []
+    HARDCODE_RE = re.compile(
+        r'(?:https?://[^\s"\')\]]+|(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d+'
+        r'|(?:password|secret|api_key|token)\s*[:=]\s*["\'][^"\']{6,}["\'])',
+        re.IGNORECASE)
+
+    # Only scan source-code files (skills + instructions already covered by AP-09)
+    candidates = found.get("skills", []) + found.get("instructions", []) + found.get("agents", [])
+    value_files: dict[str, list[str]] = defaultdict(list)
+
+    for fpath in candidates:
+        ext = Path(fpath).suffix
+        # For md files, extract code blocks
+        if ext == '.md':
+            try:
+                with open(fpath, 'r', encoding='utf-8', errors='ignore') as fh:
+                    content = fh.read()
+            except (FileNotFoundError, PermissionError):
+                continue
+            code_blocks = re.findall(r'```[\s\S]*?```', content)
+            combined = '\n'.join(code_blocks)
+        else:
+            continue  # MD-only for now
+
+        for m in HARDCODE_RE.finditer(combined):
+            val = m.group()
+            value_files[val].append(fpath)
+
+    duplicated = {v: fs for v, fs in value_files.items() if len(fs) >= 2}
+    if len(duplicated) >= 3:
+        examples = list(duplicated.keys())[:3]
+        findings.append(Finding(
+            "AP-18", "low", "",
+            detail=f"发现 {len(duplicated)} 个硬编码值在多个文件中重复（如 {', '.join(examples)}）",
+            suggestion="将重复的配置值提取到单一配置文件或环境变量",
+            est_savings="每次加载 200-500 token"
+        ))
+    return findings
     """AP-09: Large inline documentation blocks in skill/instruction files."""
     if not (filepath.endswith(".md") or filepath.endswith(".instructions.md")):
         return None
@@ -709,6 +828,18 @@ def scan(target_dir: str, platform: str = "copilot",
         result = check_excessive_comment_ratio(f)
         if result:
             findings.append(result.to_dict())
+
+    # AP-16: Monolithic source files
+    for f in found["skills"] + found["instructions"]:
+        result = check_monolithic_source(f)
+        if result:
+            findings.append(result.to_dict())
+
+    # AP-17: Missing .gitignore entries
+    findings.extend(f.to_dict() for f in check_missing_gitignore_entries(root))
+
+    # AP-18: Hard-coded config duplication
+    findings.extend(f.to_dict() for f in check_config_duplication(found))
 
     # --- Frontmatter-based checks ---
     all_md_files = found["skills"] + found["instructions"] + found["agents"] + found["prompts"] + found["always_on"]
