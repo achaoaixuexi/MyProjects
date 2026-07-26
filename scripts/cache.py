@@ -84,7 +84,7 @@ class FileScanCache:
         self._load()
         stale = []
         for key in list(self._data.keys()):
-            fpath = key.split("::", 1)[0]
+            fpath = key.rsplit("::", 2)[0]
             if fpath not in known_files:
                 stale.append(key)
         for k in stale:

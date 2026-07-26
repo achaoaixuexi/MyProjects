@@ -342,6 +342,9 @@ def generate_project_section(project_data: dict) -> str:
         lines.append("**建议**: 在 `.gitignore` 中添加上述目录以提升扫描效率。")
 
     return "\n".join(lines)
+
+
+def generate_runtime_report(data: dict) -> str:
     """Generate Markdown report from runtime analysis data."""
     backend = data.get("backend", "unknown")
     findings = data.get("findings", [])

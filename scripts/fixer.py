@@ -134,7 +134,7 @@ def _smart_truncate(text: str, max_len: int | None = None) -> str:
     """
     # ── P1-3: early exit ──
     if not text:
-        return text
+        return ""
 
     # ── P1-2: adaptive length ──
     if max_len is None:

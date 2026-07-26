@@ -561,6 +561,9 @@ def analyze(data: dict, static_findings: list[dict] | None = None,
 
     # ── Session-level cache: skip already-analysed sessions ──
     sessions = data.get("sessions", [])
+    # P1-Fix: type guard
+    if not isinstance(sessions, list):
+        sessions = []
     if use_cache and sessions:
         from cache import SessionCache
         sc = SessionCache(Path.cwd())
@@ -584,7 +587,6 @@ def analyze(data: dict, static_findings: list[dict] | None = None,
         # Filter data for new sessions only
         if new_ids and len(new_ids) < len(all_ids):
             data = _filter_sessions(data, new_ids)
-        sc.mark_analyzed_batch(all_ids)
 
     detectors = [
         detect_long_sessions_without_compaction,
@@ -606,6 +608,12 @@ def analyze(data: dict, static_findings: list[dict] | None = None,
     for detector in detectors:
         results = detector(data)
         all_findings.extend(r.to_dict() for r in results)
+
+    # ── P1-Fix: mark analysed only after successful analysis ──
+    if use_cache and sessions:
+        from cache import SessionCache
+        sc2 = SessionCache(Path.cwd())
+        sc2.mark_analyzed_batch([s.get("id", "") for s in sessions])
 
     # Severity summary
     severity_count = {"critical": 0, "high": 0, "medium": 0, "low": 0}

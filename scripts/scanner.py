@@ -743,6 +743,8 @@ def scan(target_dir: str, platform: str = "copilot",
          max_depth: int = 5, max_files: int = 1000,
          use_cache: bool = True, learn: bool = False) -> dict:
     """Run all checks and return structured results."""
+    if target_dir is None or not isinstance(target_dir, (str, Path)):
+        return {"error": f"无效的目标目录: {target_dir}", "findings": [], "summary": {}}
     root = Path(target_dir).resolve()
     if not root.is_dir():
         return {"error": f"目录不存在: {target_dir}", "findings": [], "summary": {}}
