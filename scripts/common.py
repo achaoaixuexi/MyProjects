@@ -64,7 +64,7 @@ def parse_frontmatter(filepath: str) -> dict[str, Any]:
 
     # Try pyyaml first
     try:
-        import yaml
+        import yaml  # type: ignore[import-untyped]
         return yaml.safe_load(raw) or {}
     except ImportError:
         pass

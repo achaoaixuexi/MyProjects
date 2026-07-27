@@ -49,6 +49,10 @@ _ENTITY_PATTERNS: list[tuple["re.Pattern[str]", str]] = [
     (re.compile(r'[「「]([^」」]+)[」」]'), 'cn_quote_term'),          # 「诊断优化」
     (re.compile(r'v\d+\.\d+(?:\.\d+)?'), 'cn_version_v'),           # v2.0.0
     (re.compile(r'[《]([^》]+)[》]'), 'cn_book_title'),               # 《SKILL.md规范》
+    # ── Issue2-Fix: technical detail patterns ──
+    (re.compile(r'\b\d{2,6}\s*(?:ms|s|sec|min|h|hour)s?\b'), 'timeout'),  # 5000ms, 30s, 5min
+    (re.compile(r'\b(?:max|min|pool|timeout|retry|limit|size|ttl|port)\w*\s*[=:]\s*\d+\b'), 'config'),  # pool_size=20
+    (re.compile(r'\b\d+\s*x\b'), 'multiplier'),  # 3x faster
 ]
 
 # ── P0-1: code-fence / structured-data bracket safety ──
@@ -265,8 +269,8 @@ def _fidelity_check(original: str, truncated: str) -> tuple[bool, str]:
     """Lightweight check: does the truncated description retain the core intent?
 
     Returns (pass, reason).
-    Compares the presence of key structural signals: trigger-words, keywords,
-    and whether truncation happened mid-entity.
+    Checks: 1) trigger-word preservation  2) entity retention rate
+    3) minimum length safety.
     """
     trigger_words = [
         "use when", "使用", "diagnose", "诊断", "optimize", "优化",
@@ -275,13 +279,22 @@ def _fidelity_check(original: str, truncated: str) -> tuple[bool, str]:
     orig_lower = original.lower()
     trunc_lower = truncated.lower()
 
-    # Check: did we lose ALL trigger words?
+    # Check 1: did we lose ALL trigger words?
     orig_triggers = [t for t in trigger_words if t in orig_lower]
     trunc_triggers = [t for t in orig_triggers if t in trunc_lower]
     if orig_triggers and not trunc_triggers:
         return False, f"所有触发词丢失: {orig_triggers}"
 
-    # Check: is the truncated text extremely short compared to original?
+    # Check 2 (Issue3-Fix): entity retention rate
+    orig_entity_count = 0
+    trunc_entity_count = 0
+    for pattern, _ in _ENTITY_PATTERNS:
+        orig_entity_count += len(pattern.findall(original))
+        trunc_entity_count += len(pattern.findall(truncated))
+    if orig_entity_count > 0 and trunc_entity_count / orig_entity_count < 0.5:
+        return False, f"实体保留率过低 ({trunc_entity_count}/{orig_entity_count})"
+
+    # Check 3: is the truncated text extremely short compared to original?
     if len(truncated.rstrip(".")) < min(30, len(original) * 0.15):
         return False, "截断后文本过短，可能丢失核心语义"
 
@@ -355,16 +368,24 @@ def fix_long_description(findings: list[dict], dry_run: bool = False, interactiv
                 continue
 
             fm = fm_match.group(1)
-            # Try to extract the description value
-            #   - inline string:  description: "text"
-            #   - block scalar:   description: |  or  description: >
-            desc_match = re.search(r'description:\s*["\']?(.+?)["\']?\s*\n', fm)
-            if not desc_match:
-                desc_match = re.search(r'description:\s*[|>][-+]?\s*\n((?:\s{2,}.+\n?)+)', fm)
-            if not desc_match:
+            # Try to extract the description — capture full line(s) for safe replacement
+            #   - inline string:  description: "text"\n
+            #   - block scalar:   description: |\n  Line one\n  Line two\n
+            desc_line = re.search(
+                r'(description:\s*["\']?)(.+?)(["\']?\s*\n)', fm)
+            is_block = False
+            if not desc_line:
+                desc_line = re.search(
+                    r'(description:\s*[|>][-+]?\s*\n)((?:\s{2,}.+\n?)+)', fm)
+                is_block = True
+            if not desc_line:
                 continue
 
-            old_desc = desc_match.group(1).strip()
+            preamble = desc_line.group(1)      # 'description: "' or 'description: |\n'
+            old_desc = desc_line.group(2).strip()
+            trailer = '' if is_block else desc_line.group(3)  # '"\n' or ''
+
+            old_full = desc_line.group(0)       # full 'description: "old text"\n'
             if len(old_desc) <= 200:
                 continue
 
@@ -386,7 +407,14 @@ def fix_long_description(findings: list[dict], dry_run: bool = False, interactiv
                     f"[DRY-RUN] 将精简 description: {len(old_desc)}→{len(new_desc)} 字符",
                     filepath))
             else:
-                new_content = content.replace(old_desc, new_desc, 1)
+                new_full = preamble + new_desc + trailer
+                new_content = content.replace(old_full, new_full, 1)
+                # Verify replacement succeeded (Issue4-Fix)
+                if new_content == content:
+                    results.append(FixResult("AP-12",
+                        "修复失败: 替换未命中（description 文本在全文中不唯一或格式不匹配）",
+                        filepath, success=False))
+                    continue
                 with open(filepath, "w", encoding="utf-8") as fh:
                     fh.write(new_content)
                 results.append(FixResult("AP-12",
